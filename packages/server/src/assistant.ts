@@ -196,7 +196,9 @@ export function buildStrategyPrompt(
   );
   for (const row of view.players) {
     const role = row.role === null ? '' : `,身份:${ROLE_LABELS[row.role]}`;
-    lines.push(`- ${row.seat}号:${row.alive ? '存活' : '出局'}${row.hasBadge ? ',警徽' : ''}${role}`);
+    lines.push(
+      `- ${row.seat}号:${row.alive ? '存活' : '出局'}${row.hasBadge ? ',警徽' : ''}${role}`,
+    );
   }
   lines.push('', '## 此前发言记录');
   let lastDay = -1;
@@ -258,12 +260,13 @@ async function askProvider(
   for (const guided of [true, false]) {
     const response = await fetchImpl(provider.url, {
       method: 'POST',
-      headers: provider.apiKey === null
-        ? { 'content-type': 'application/json' }
-        : {
-            'content-type': 'application/json',
-            Authorization: `Bearer ${provider.apiKey}`,
-          },
+      headers:
+        provider.apiKey === null
+          ? { 'content-type': 'application/json' }
+          : {
+              'content-type': 'application/json',
+              Authorization: `Bearer ${provider.apiKey}`,
+            },
       body: JSON.stringify({
         model: provider.model,
         max_tokens: ASSISTANT_MAX_TOKENS,
