@@ -12,6 +12,7 @@ import {
   requireNight,
 } from './state';
 import type { Seat } from './types';
+import { campOf } from './types';
 import { plurality } from './votes';
 
 /** Night order: 狼人 → 女巫 → 预言家. No guard exists on this board. */
@@ -36,8 +37,8 @@ export function handleWolfKill(
   }
   const actor = getPlayer(state, action.actor);
   if (!actor.alive) throw new GameError('PLAYER_DEAD', 'Dead players cannot act.');
-  if (actor.role !== 'werewolf') {
-    throw new GameError('NOT_YOUR_TURN', 'Only werewolves vote for the night kill.');
+  if (campOf(actor.role) !== 'wolf') {
+    throw new GameError('NOT_YOUR_TURN', 'Only wolves vote for the night kill.');
   }
   if (action.target !== null) {
     requireLivingTarget(state, action.target);
@@ -46,7 +47,7 @@ export function handleWolfKill(
   }
   night.wolfVotes[action.actor] = action.target;
   events.push({ type: 'WOLF_KILL_VOTE', actor: action.actor, target: action.target });
-  const livingWolves = livingPlayers(state).filter((p) => p.role === 'werewolf');
+  const livingWolves = livingPlayers(state).filter((p) => campOf(p.role) === 'wolf');
   if (livingWolves.every((w) => night.wolfVotes[w.seat] !== undefined)) {
     resolveWolfVote(state, night, events);
   }
@@ -172,7 +173,7 @@ export function handleSeerCheck(
   const target = requireLivingTarget(state, action.target);
   const priv = seer.private;
   if (priv.kind !== 'seer') throw new GameError('NOT_YOUR_TURN', 'Seat is not the seer.');
-  const result = target.role === 'werewolf' ? 'wolf' : 'good';
+  const result = campOf(target.role) === 'wolf' ? 'wolf' : 'good';
   priv.checks[action.target] = result;
   events.push({ type: 'SEER_CHECKED', actor: seer.seat, target: action.target, result });
   completeNight(state, events);

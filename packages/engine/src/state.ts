@@ -1,3 +1,4 @@
+import type { BoardId } from './boards';
 import type { EngineConfig } from './config';
 import type { GameEvent } from './events';
 import { GameError } from './errors';
@@ -87,6 +88,8 @@ export interface SpeechState {
 }
 
 export interface GameState {
+  /** Which board dealt this game — registry id resolved at creation. */
+  board: BoardId;
   phase: Phase;
   dayNumber: number;
   players: Record<Seat, PlayerState>;

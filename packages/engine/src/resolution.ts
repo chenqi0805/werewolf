@@ -3,18 +3,19 @@ import { GameError } from './errors';
 import type { DeathCause, DeathRecord, GameState, NightState, ResolutionState } from './state';
 import { freshNight, getPlayer, livingPlayers, requireNight } from './state';
 import type { Seat } from './types';
-import { GOD_ROLES } from './types';
+import { campOf, GOD_ROLES } from './types';
 
 /**
- * 屠边 win check. Wolves win when every villager is dead OR all four gods are
- * dead; good wins when every wolf is dead. If both sides are somehow wiped in
- * the same step, "all wolves dead" is checked first (good wins).
+ * 屠边 win check. Wolves win when every wolf-camp player is dead OR all four
+ * gods are dead; good wins when every wolf is dead. If both sides are somehow
+ * wiped in the same step, "all wolves dead" is checked first — the v1 ruling
+ * (good wins ties) that boards may invert via 狼刀在先.
  *
  * Called exactly once per death-application batch — never mid-action.
  */
 export function winCheck(state: GameState): 'wolves' | 'good' | null {
   const ps = Object.values(state.players);
-  if (ps.every((p) => p.role !== 'werewolf' || !p.alive)) return 'good';
+  if (ps.every((p) => campOf(p.role) !== 'wolf' || !p.alive)) return 'good';
   const villagersAllDead = ps.filter((p) => p.role === 'villager').every((p) => !p.alive);
   const godsAllDead = ps.filter((p) => GOD_ROLES.includes(p.role)).every((p) => !p.alive);
   return villagersAllDead || godsAllDead ? 'wolves' : null;

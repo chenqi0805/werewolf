@@ -19,6 +19,13 @@ export const ROLE_META: Record<Role, RoleMeta> = {
     ability: '每晚与同伴共同猎杀一名玩家。',
     accent: '--role-wolf',
   },
+  white_wolf_king: {
+    label: '白狼王',
+    monogram: '王',
+    team: 'wolves',
+    ability: '自爆带走一名玩家，白天发言或被放逐结算时可发动；被毒杀或夜杀则失效。',
+    accent: '--role-wolf',
+  },
   villager: {
     label: '村民',
     monogram: '民',
@@ -46,6 +53,13 @@ export const ROLE_META: Record<Role, RoleMeta> = {
     team: 'good',
     ability: '被狼杀或被放逐时可开枪带走一人；被毒杀时不能开枪。',
     accent: '--role-hunter',
+  },
+  guard: {
+    label: '守卫',
+    monogram: '守',
+    team: 'good',
+    ability: '每晚守护一名玩家免受狼刀；不能连续两晚守护同一人，同守同救则奶穿。',
+    accent: '--role-seer',
   },
   idiot: {
     label: '白痴',

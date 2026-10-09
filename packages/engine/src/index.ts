@@ -9,7 +9,10 @@
 export type { Camp, Phase, PrivateState, PlayerState, Role, Seat, SeatAssignment } from './types';
 export { canVote, GOD_ROLES, SEAT_COUNT, campOf } from './types';
 
-export type { EngineConfig } from './config';
+export type { BoardId, BoardDefinition, NightStep } from './boards';
+export { BOARDS } from './boards';
+
+export type { EngineConfig, WolfKingDestructWindow } from './config';
 export { DEFAULT_CONFIG } from './config';
 
 export type { GameAction, PlayerAction, ServerAction } from './actions';
