@@ -21,6 +21,10 @@ export interface PlayerRow {
   voteWeight: number;
   /** A session holds this seat — the lobby's occupancy signal. */
   occupied: boolean;
+  /** True for a server-seated AI player — the lobby's AI badge. */
+  isBot: boolean;
+  /** The server-picked nickname for a bot seat; humans are null. */
+  botName: string | null;
   /** Non-null only when this viewer may see it (see viewFor). */
   role: Role | null;
 }
@@ -185,6 +189,8 @@ export function viewFor(
   timer: TimerInfo | null = null,
   /** Seats held by a session; unset reads as every dealt seat occupied. */
   occupiedSeats?: ReadonlySet<Seat>,
+  /** seat → nickname for the room's AI seats; unset reads as none. */
+  bots?: ReadonlyMap<Seat, string>,
 ): PlayerView {
   const over = state.phase === 'game-over';
   const viewer = seat === null ? null : (state.players[seat] ?? null);
@@ -216,6 +222,8 @@ export function viewFor(
       revealedIdiot: p.revealedIdiot,
       voteWeight: started && canVote(p) ? voteWeight(p) : 0,
       occupied: occupiedSeats ? occupiedSeats.has(p.seat) : true,
+      isBot: bots?.has(p.seat) ?? false,
+      botName: bots?.get(p.seat) ?? null,
       role,
     });
   }

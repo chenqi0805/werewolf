@@ -20,6 +20,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@werewolf/bots": "*",
     "better-sqlite3": "^12.11.1",
     "socket.io": "^4.8.4"
   }

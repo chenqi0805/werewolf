@@ -2,6 +2,8 @@ import { createApp } from './gateway';
 import type { GatewayOptions, TimerOverrides } from './gateway';
 import type { AssistantOptions } from './assistant';
 import type { VoiceOptions } from './voice';
+import type { BotStrategy } from '@werewolf/bots';
+import { fetchLlmClient, LlmStrategy, ScriptedStrategy } from '@werewolf/bots';
 import { serveStatic } from './static';
 import { resolve } from 'node:path';
 
@@ -13,6 +15,7 @@ const timers = parseTimers(process.env.WEREWOLF_TIMERS);
 const webDist = process.env.WEREWOLF_WEB_DIST;
 const voice = parseVoiceEnv();
 const assistant = parseAssistantEnv();
+const botBrains = parseBotBrainEnv();
 // Rooms persist by default: the SQLite file lands under the working
 // directory (the hosted deployment's workdir), so rooms, tokens, speeches,
 // votes, and clocks survive a restart. WEREWOLF_DB_PATH relocates it.
@@ -26,6 +29,7 @@ if (assistant !== null) {
   // The 复盘 rides the same provider env — no separate postgame config exists.
   opts.postgame = assistant;
 }
+if (botBrains !== null) opts.botStrategyFactory = botBrains;
 
 const app = createApp({ ...opts, dbPath });
 if (webDist !== undefined && webDist !== '') {
@@ -93,6 +97,29 @@ function parseVoiceEnv(): VoiceOptions | null {
       language: 'zh-CN',
     },
   };
+}
+
+/**
+ * WEREWOLF_BOTS_LLM_BASE_URL arms the LLM bot brain: every bot runner asks
+ * that OpenAI-compatible endpoint (llama.cpp llama-server serving a small
+ * Qwen instruct model is the shipped pairing) and degrades each decision to
+ * the scripted fallback on timeout, illegal output, or an unreachable
+ * endpoint. Unset = scripted brains only — no model, no network, CI-safe.
+ */
+function parseBotBrainEnv(): (() => BotStrategy) | null {
+  const baseUrl = process.env.WEREWOLF_BOTS_LLM_BASE_URL;
+  if (baseUrl === undefined || baseUrl === '') return null;
+  const rawTimeout = process.env.WEREWOLF_BOTS_LLM_TIMEOUT_MS;
+  const timeoutMs = rawTimeout === undefined ? 8000 : Number(rawTimeout);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('WEREWOLF_BOTS_LLM_TIMEOUT_MS must be a positive number of milliseconds.');
+  }
+  const client = fetchLlmClient(
+    baseUrl,
+    process.env.WEREWOLF_BOTS_LLM_MODEL ?? 'qwen2.5-0.5b-instruct',
+    process.env.WEREWOLF_BOTS_LLM_API_KEY,
+  );
+  return () => new LlmStrategy(new ScriptedStrategy(), client, { timeoutMs });
 }
 
 /**

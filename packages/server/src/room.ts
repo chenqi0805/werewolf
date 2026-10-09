@@ -11,6 +11,7 @@ import { SEAT_COUNT } from '@werewolf/engine';
 import { applyAction, createGame } from '@werewolf/engine';
 import { RoomError } from './errors';
 import { currentSpeechSlot, type SpeechSlot } from './voice';
+import { pickBotNickname } from './botNames';
 import { shuffledDeck } from './deck';
 import { hashToken, makeRoomCode, makeToken } from './ids';
 import { defaultActionsFor } from './defaults';
@@ -68,8 +69,11 @@ export interface RoomOptions {
   /**
    * Restore path: adopt a replayed engine state and pre-seated token hashes
    * instead of dealing a fresh deck. Hooks still record post-restore play.
+   * `bots` lists which seats are AI players — their nicknames are re-drawn
+   * from the pool in seat order (names are cosmetic; only bot-ness is
+   * durable) and their raw tokens are reminted by the bot manager.
    */
-  restored?: { state: GameState; seats: ReadonlyMap<Seat, string> };
+  restored?: { state: GameState; seats: ReadonlyMap<Seat, string>; bots?: ReadonlySet<Seat> };
 }
 
 /**
@@ -83,6 +87,9 @@ export class Room {
   /** seat → sha256(session token) — the hash is also the persisted form. */
   private readonly seats = new Map<Seat, string>();
 
+  /** seat → server-picked nickname; membership here means the seat is a bot. */
+  private readonly botNames = new Map<Seat, string>();
+
   private currentState: GameState;
 
   private readonly hooks?: RoomHooks;
@@ -94,6 +101,11 @@ export class Room {
       this.currentState = opts.restored.state;
       for (const [seat, tokenHash] of opts.restored.seats) {
         this.seats.set(seat, tokenHash);
+      }
+      if (opts.restored.bots) {
+        for (const seat of [...opts.restored.bots].sort((a, b) => a - b)) {
+          this.botNames.set(seat, pickBotNickname(new Set(this.botNames.values())));
+        }
       }
     } else {
       const boardId = opts.boardId ?? 'classic';
@@ -151,6 +163,62 @@ export class Room {
     return new Set(this.seats.keys());
   }
 
+  /** seat → nickname for every AI seat — the view's badge and label. */
+  botSeats(): ReadonlyMap<Seat, string> {
+    return this.botNames;
+  }
+
+  isBotSeat(seat: Seat): boolean {
+    return this.botNames.has(seat);
+  }
+
+  /**
+   * Seats an AI player like a human (lowest free seat, minted token) and
+   * names it from the pool. Lobby-only — the bot manager receives the raw
+   * token for its loopback runner; the browser never sees it.
+   */
+  addBot(): { seat: Seat; name: string; token: string } {
+    if (this.hasStarted()) {
+      throw new RoomError('ALREADY_STARTED', 'Bots join in the lobby only.');
+    }
+    const seat = this.firstFreeSeat();
+    const token = makeToken();
+    this.seats.set(seat, hashToken(token));
+    const name = pickBotNickname(new Set(this.botNames.values()));
+    this.botNames.set(seat, name);
+    this.hooks?.onSeatsChanged?.(this);
+    return { seat, name, token };
+  }
+
+  /** Lobby-only bot retirement: frees the seat and its nickname. */
+  removeBot(seat: Seat): void {
+    if (this.hasStarted()) {
+      throw new RoomError('ALREADY_STARTED', 'Bots leave in the lobby only.');
+    }
+    if (!this.botNames.has(seat)) {
+      throw new RoomError('NOT_A_BOT', 'No bot sits in this seat.');
+    }
+    this.botNames.delete(seat);
+    this.seats.delete(seat);
+    this.hooks?.onSeatsChanged?.(this);
+  }
+
+  /**
+   * Restore path only: mint a fresh raw token for a bot seat whose stored
+   * hash has no raw counterpart on this machine (tokens are hashed at rest).
+   * The bot manager hands the raw token to the seat's loopback runner;
+   * reminting is restricted to bots so no human session can be invalidated.
+   */
+  remintBotToken(seat: Seat): string {
+    if (!this.botNames.has(seat)) {
+      throw new RoomError('NOT_A_BOT', 'Only bot seats may remint tokens.');
+    }
+    const token = makeToken();
+    this.seats.set(seat, hashToken(token));
+    this.hooks?.onSeatsChanged?.(this);
+    return token;
+  }
+
   /**
    * Lobby-only quit: frees the seat and kills the token, so the next join
    * reuses it and the old token cannot reattach. Once the game has started
@@ -166,6 +234,7 @@ export class Room {
       throw new RoomError('NO_SEAT', 'No session holds this seat.');
     }
     this.seats.delete(seat);
+    this.botNames.delete(seat);
     this.hooks?.onSeatsChanged?.(this);
   }
 
