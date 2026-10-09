@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { GameEvent } from '@werewolf/engine';
 import type { PlayerView } from '@werewolf/server';
 
 import {
@@ -14,6 +15,7 @@ import {
   seerTargets,
   sheriffSignupState,
   speechContextOf,
+  strategyContextOf,
   voteContextOf,
 } from './gating';
 
@@ -148,6 +150,56 @@ describe('canSpeakNow and speechContextOf', () => {
       'sheriff-speech',
     );
     expect(speechContextOf(view({ step: { kind: 'night', step: 'wolf' } }))).toBeNull();
+  });
+});
+
+describe('strategyContextOf', () => {
+  const log: GameEvent[] = [
+    { type: 'SPEECH_MADE', seat: 1, text: '我怀疑后置位的两个人。', context: 'speech' },
+  ];
+
+  it('offers the current speaker their role and the day-grouped record', () => {
+    const context = strategyContextOf(
+      view({
+        you: you({ role: 'seer' }),
+        step: { kind: 'speech', order: [3, 4], cursor: 0 },
+        log,
+      }),
+    );
+    expect(context?.role).toBe('seer');
+    expect(context?.dayRecords).toEqual([
+      {
+        day: 1,
+        records: [
+          { day: 1, context: 'speech', seat: 1, name: '1号', text: '我怀疑后置位的两个人。' },
+        ],
+      },
+    ]);
+  });
+
+  it('hides while another seat holds the mic', () => {
+    expect(
+      strategyContextOf(view({ step: { kind: 'speech', order: [3, 4], cursor: 1 }, log })),
+    ).toBeNull();
+  });
+
+  it('hides until someone has spoken', () => {
+    expect(
+      strategyContextOf(view({ step: { kind: 'speech', order: [3, 4], cursor: 0 } })),
+    ).toBeNull();
+  });
+
+  it('hides dead viewers and non-speech steps', () => {
+    expect(
+      strategyContextOf(
+        view({
+          you: you({ alive: false }),
+          step: { kind: 'speech', order: [3], cursor: 0 },
+          log,
+        }),
+      ),
+    ).toBeNull();
+    expect(strategyContextOf(view({ step: { kind: 'night', step: 'wolf' }, log }))).toBeNull();
   });
 });
 

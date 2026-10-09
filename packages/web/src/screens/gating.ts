@@ -1,8 +1,14 @@
 import type { PlayerAction } from '@werewolf/engine';
 import type { PlayerView, StepView, TimerInfo } from '@werewolf/server';
 
-import type { SeatView } from '../types';
-import { livingOthersOf, seatViewsOf, uncheckedTargetsOf, wolfTargetsOf } from '../client/adapters';
+import type { Role, SeatView, SpeechRecord } from '../types';
+import {
+  livingOthersOf,
+  seatViewsOf,
+  speechByDayOf,
+  uncheckedTargetsOf,
+  wolfTargetsOf,
+} from '../client/adapters';
 
 /**
  * Pure decision helpers for the screens: given the current PlayerView, what may
@@ -125,6 +131,28 @@ export function speechContextOf(
     return step.kind;
   }
   return null;
+}
+
+/** Everything the strategy assistant needs, resolved once the gate passes. */
+export interface StrategyContext {
+  /** The viewer's own role — the advisor's frame of reference. */
+  role: Role;
+  /** Day-grouped public speech record, days ascending. */
+  dayRecords: Array<{ day: number; records: SpeechRecord[] }>;
+}
+
+/**
+ * The strategy assistant is offered only to the seat holding the mic, while
+ * alive, with at least one speech on the public record to reason from — the
+ * server enforces the same three conditions before answering.
+ */
+export function strategyContextOf(view: PlayerView): StrategyContext | null {
+  if (!canSpeakNow(view)) return null;
+  const { role } = view.you;
+  if (role === null) return null;
+  const dayRecords = speechByDayOf(view.log);
+  if (dayRecords.length === 0) return null;
+  return { role, dayRecords };
 }
 
 /** Signup-pad state during the sheriff election. */
