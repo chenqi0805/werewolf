@@ -19,6 +19,7 @@ export {
   type StepView,
   type YouView,
   type WitchPotionView,
+  type TimerInfo,
 } from './view';
 export {
   attachGateway,

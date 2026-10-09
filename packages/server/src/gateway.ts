@@ -5,7 +5,7 @@ import { GameError } from '@werewolf/engine';
 import { RoomError } from './errors';
 import { RoomRegistry, type Room } from './room';
 import { clockKey, DEFAULT_TIMERS } from './defaults';
-import { eventsForSeat, viewFor, type PlayerView } from './view';
+import { eventsForSeat, viewFor, type PlayerView, type TimerInfo } from './view';
 
 /** Freeform speech longer than this is rejected as a bad action. */
 const MAX_SPEECH_LENGTH = 2000;
@@ -89,6 +89,8 @@ export function attachGateway(
   const timers: Record<string, number> = { ...DEFAULT_TIMERS, ...opts?.timers };
   const roomSockets = new Map<string, Set<GatewaySocket>>();
   const roomTimers = new Map<string, NodeJS.Timeout>();
+  /** The step deadline currently advertised to joining/rejoining sockets. */
+  const deadlines = new Map<string, TimerInfo>();
 
   function bind(socket: GatewaySocket, roomCode: string, seat: Seat | null): void {
     socket.data.roomCode = roomCode;
@@ -119,7 +121,14 @@ export function attachGateway(
     return { code: 'INTERNAL', message: error instanceof Error ? error.message : String(error) };
   }
 
+  function emitView(socket: GatewaySocket, room: Room, seat: Seat | null): void {
+    socket.emit('game:view', viewFor(room.state, seat, deadlines.get(room.code) ?? null));
+  }
+
   function broadcast(room: Room, events: readonly GameEvent[]): void {
+    // Arm the step clock first: every view this broadcast emits must already
+    // carry the fresh deadline, never the expired one from the previous step.
+    armTimer(room);
     const sockets = roomSockets.get(room.code);
     if (sockets) {
       for (const socket of sockets) {
@@ -127,10 +136,9 @@ export function attachGateway(
         for (const event of eventsForSeat(events, seat)) {
           socket.emit('game:event', event);
         }
-        socket.emit('game:view', viewFor(room.state, seat));
+        emitView(socket, room, seat);
       }
     }
-    armTimer(room);
   }
 
   /** One clock per room, re-armed after every accepted change. */
@@ -141,9 +149,16 @@ export function attachGateway(
       roomTimers.delete(room.code);
     }
     const key = clockKey(room.state);
-    if (key === null) return;
+    if (key === null) {
+      deadlines.delete(room.code);
+      return;
+    }
     const ms = timers[key];
-    if (ms === undefined) return;
+    if (ms === undefined) {
+      deadlines.delete(room.code);
+      return;
+    }
+    deadlines.set(room.code, { key, endsAt: Date.now() + ms });
     const timer = setTimeout(() => {
       roomTimers.delete(room.code);
       try {
@@ -169,7 +184,7 @@ export function attachGateway(
       const { seat, sessionToken } = room.join();
       bind(socket, room.code, seat);
       ack({ roomCode: room.code, seat, sessionToken });
-      socket.emit('game:view', viewFor(room.state, seat));
+      emitView(socket, room, seat);
     });
 
     socket.on('room:join', (code, ack) => {
@@ -183,14 +198,14 @@ export function attachGateway(
         // A finished room accepts anyone as a spectator, full reveal.
         bind(socket, room.code, null);
         ack({ roomCode: room.code, spectator: true });
-        socket.emit('game:view', viewFor(room.state, null));
+        emitView(socket, room, null);
         return;
       }
       try {
         const { seat, sessionToken } = room.join();
         bind(socket, room.code, seat);
         ack({ roomCode: room.code, seat, sessionToken });
-        socket.emit('game:view', viewFor(room.state, seat));
+        emitView(socket, room, seat);
       } catch (error) {
         ack({ error: errorPayload(error).code });
       }
@@ -210,7 +225,7 @@ export function attachGateway(
         bind(socket, room.code, seat);
         ack({ seat });
         // The view carries the seat's full visible log — the backlog.
-        socket.emit('game:view', viewFor(room.state, seat));
+        emitView(socket, room, seat);
       } catch (error) {
         ack({ error: errorPayload(error).code });
       }
@@ -282,6 +297,7 @@ export function attachGateway(
   return () => {
     for (const timer of roomTimers.values()) clearTimeout(timer);
     roomTimers.clear();
+    deadlines.clear();
   };
 }
 
