@@ -2,7 +2,6 @@ import { expect, type Browser, type BrowserContext, type Page } from '@playwrigh
 import type { Role, Seat } from '@werewolf/engine';
 
 import { ROLE_LABELS, SELECTORS, dayOfTitle } from './labels';
-
 /** One seated player: the page holding the seat and the role it was dealt. */
 export interface SeatPage {
   seat: Seat;
@@ -110,4 +109,14 @@ async function readRole(page: Page): Promise<Role> {
 export async function dayNumberOf(page: Page): Promise<number | null> {
   const title = await page.locator('.scr-title').first().textContent({ timeout: 2_000 });
   return dayOfTitle(title);
+}
+
+/**
+ * The first seat's page — the anchor view reveal/log assertions read. The
+ * table always seats twelve, so a missing seat means the harness broke.
+ */
+export function anchorPage(table: Table): Page {
+  const seat = table.seats[0];
+  if (!seat) throw new Error('the table has no seats');
+  return seat.page;
 }

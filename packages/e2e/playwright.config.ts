@@ -27,8 +27,7 @@ export default defineConfig({
   webServer: externalBaseURL
     ? undefined
     : {
-        command:
-          'npm run build -w @werewolf/web && node scripts/start-server.mjs',
+        command: 'npm run build -w @werewolf/web && node scripts/start-server.mjs',
         url: `http://127.0.0.1:${port}`,
         // The production build is what a hosted deployment serves — the e2e
         // suite must exercise the same bytes, not the dev server.

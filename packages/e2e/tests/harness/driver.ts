@@ -339,11 +339,7 @@ async function readWinner(page: Page | null): Promise<'wolves' | 'good' | null> 
 /** All twelve pages must show the reveal before the scenario may assert. */
 async function expectReveal(table: Table): Promise<void> {
   await Promise.all(
-    table.seats.map((seat) =>
-      expect(seat.page.locator(SELECTORS.gameOver)).toBeVisible({
-        message: `seat ${seat.seat} game-over reveal`,
-      }),
-    ),
+    table.seats.map((seat) => expect(seat.page.locator(SELECTORS.gameOver)).toBeVisible()),
   );
 }
 
