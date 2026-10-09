@@ -35,6 +35,7 @@ const row = (seat: number, overrides: Partial<PlayerView['players'][number]> = {
   hasBadge: false,
   revealedIdiot: false,
   voteWeight: 1,
+  occupied: true,
   role: null,
   ...overrides,
 });

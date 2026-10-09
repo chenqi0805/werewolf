@@ -238,3 +238,45 @@ describe('scripted full game — deterministic deck', () => {
     }
   });
 });
+
+describe('lobby seat release', () => {
+  it('frees the seat for the next joiner', () => {
+    const room = fixedRoom();
+    const first = room.join();
+    room.leave(first.seat);
+    expect(room.seatedCount).toBe(0);
+    expect(room.join().seat).toBe(first.seat);
+  });
+
+  it('exposes occupancy through occupiedSeats', () => {
+    const room = fixedRoom();
+    const a = room.join();
+    room.join();
+    expect(room.occupiedSeats()).toEqual(new Set([a.seat, 2]));
+    room.leave(a.seat);
+    expect(room.occupiedSeats()).toEqual(new Set([2]));
+  });
+
+  it('rejects a leave once the game has started — mid-game semantics unchanged', () => {
+    const room = makeFullRoom();
+    room.start();
+    try {
+      room.leave(1);
+      expect.unreachable('leave after start must throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(RoomError);
+      expect((error as RoomError).code).toBe('ALREADY_STARTED');
+    }
+  });
+
+  it('rejects a leave for a seat no session holds', () => {
+    const room = fixedRoom();
+    try {
+      room.leave(5);
+      expect.unreachable('leaving an unheld seat must throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(RoomError);
+      expect((error as RoomError).code).toBe('NO_SEAT');
+    }
+  });
+});

@@ -43,6 +43,7 @@ export function seatViewsOf(view: PlayerView): SeatView[] {
     isSelf: row.seat === view.you.seat,
     isSheriff: row.hasBadge,
     isSpeaking: speaking === row.seat,
+    occupied: row.occupied,
     role: row.role === null ? undefined : row.role,
     revealedIdiot: row.revealedIdiot || undefined,
   }));
@@ -52,6 +53,11 @@ export function seatViewsOf(view: PlayerView): SeatView[] {
 export function livingOthersOf(view: PlayerView): SeatView[] {
   const you = view.you.seat;
   return seatViewsOf(view).filter((s) => s.alive && s.seat !== you);
+}
+
+/** Seats with a session holding them — the lobby's true count, not alive rows. */
+export function occupiedCountOf(seats: readonly SeatView[]): number {
+  return seats.filter((s) => s.occupied === true).length;
 }
 
 /** The wolf pack's viable victims: living and not wolves. */
@@ -321,4 +327,20 @@ export function phaseCaptionOf(view: PlayerView): string {
 /** True while the viewer is a real seated player (not a spectator). */
 export function isSeated(view: PlayerView): view is PlayerView & { you: YouView & { seat: Seat } } {
   return view.you.seat !== null;
+}
+
+const ROOM_ERROR_TEXT: Record<string, string> = {
+  ROOM_NOT_FOUND: '房间不存在或已关闭',
+  ROOM_FULL: '房间已满员',
+  ROOM_NOT_FULL: '人数未满，无法开局',
+  ALREADY_STARTED: '对局已经开始',
+  GAME_RUNNING: '对局进行中，无法加入',
+  BAD_TOKEN: '会话已失效，请重新加入',
+  NOT_IN_ROOM: '你已不在房间中',
+  NO_SEAT: '你没有座位',
+};
+
+/** Short zh label for a known room error code; unknown codes pass through. */
+export function roomErrorText(code: string): string {
+  return ROOM_ERROR_TEXT[code] ?? `操作失败（${code}）`;
 }

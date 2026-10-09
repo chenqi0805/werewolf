@@ -163,6 +163,15 @@ export async function startRoom(socket: Client): Promise<OkAck> {
   });
 }
 
+export async function leaveRoom(socket: Client): Promise<OkAck> {
+  return new Promise((resolve, reject) => {
+    socket.emit('room:leave', (resp) => {
+      if ('error' in resp) reject(new Error(resp.error));
+      else resolve(resp);
+    });
+  });
+}
+
 /** Deliberately untyped send for malformed-payload tests. */
 export function sendRaw(socket: Client, payload: unknown): void {
   (socket.emit as (event: string, ...args: unknown[]) => void)('game:action', payload);

@@ -19,6 +19,8 @@ export interface PlayerRow {
   revealedIdiot: boolean;
   /** Public: the table sees who votes, at what weight, and who cannot. */
   voteWeight: number;
+  /** A session holds this seat — the lobby's occupancy signal. */
+  occupied: boolean;
   /** Non-null only when this viewer may see it (see viewFor). */
   role: Role | null;
 }
@@ -181,6 +183,8 @@ export function viewFor(
   state: GameState,
   seat: Seat | null,
   timer: TimerInfo | null = null,
+  /** Seats held by a session; unset reads as every dealt seat occupied. */
+  occupiedSeats?: ReadonlySet<Seat>,
 ): PlayerView {
   const over = state.phase === 'game-over';
   const viewer = seat === null ? null : (state.players[seat] ?? null);
@@ -211,6 +215,7 @@ export function viewFor(
       hasBadge: p.hasBadge,
       revealedIdiot: p.revealedIdiot,
       voteWeight: started && canVote(p) ? voteWeight(p) : 0,
+      occupied: occupiedSeats ? occupiedSeats.has(p.seat) : true,
       role,
     });
   }

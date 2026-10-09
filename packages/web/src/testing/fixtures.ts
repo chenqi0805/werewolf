@@ -15,23 +15,40 @@ export function makeSeatView(overrides: Partial<SeatView> & { seat: number }): S
     alive: true,
     isSelf: false,
     isSheriff: false,
+    occupied: true,
     ...overrides,
   };
 }
 
 const fullRoster: SeatView[] = [
-  { seat: 1, name: '法官最讨厌的人', alive: true, isSelf: true, isSheriff: true },
-  { seat: 2, name: '首夜倒牌', alive: false, isSelf: false, isSheriff: false },
-  { seat: 3, name: '查杀发言', alive: true, isSelf: false, isSheriff: false },
-  { seat: 4, name: '沉默农民', alive: true, isSelf: false, isSheriff: false },
-  { seat: 5, name: '翻牌白痴', alive: true, isSelf: false, isSheriff: false, revealedIdiot: true },
-  { seat: 6, name: '带毒女巫', alive: true, isSelf: false, isSheriff: false },
-  { seat: 7, name: '起跳预言家', alive: true, isSelf: false, isSheriff: false, isSpeaking: true },
-  { seat: 8, name: '冲锋猎人', alive: true, isSelf: false, isSheriff: false },
-  { seat: 9, name: '金水发言', alive: true, isSelf: false, isSheriff: false },
-  { seat: 10, name: '划水农民', alive: true, isSelf: false, isSheriff: false },
-  { seat: 11, name: '悍跳狼', alive: true, isSelf: false, isSheriff: false },
-  { seat: 12, name: '弃票观众', alive: true, isSelf: false, isSheriff: false },
+  { seat: 1, name: '法官最讨厌的人', alive: true, isSelf: true, isSheriff: true, occupied: true },
+  { seat: 2, name: '首夜倒牌', alive: false, isSelf: false, isSheriff: false, occupied: true },
+  { seat: 3, name: '查杀发言', alive: true, isSelf: false, isSheriff: false, occupied: true },
+  { seat: 4, name: '沉默农民', alive: true, isSelf: false, isSheriff: false, occupied: true },
+  {
+    seat: 5,
+    name: '翻牌白痴',
+    alive: true,
+    isSelf: false,
+    isSheriff: false,
+    occupied: true,
+    revealedIdiot: true,
+  },
+  { seat: 6, name: '带毒女巫', alive: true, isSelf: false, isSheriff: false, occupied: true },
+  {
+    seat: 7,
+    name: '起跳预言家',
+    alive: true,
+    isSelf: false,
+    isSheriff: false,
+    occupied: true,
+    isSpeaking: true,
+  },
+  { seat: 8, name: '冲锋猎人', alive: true, isSelf: false, isSheriff: false, occupied: true },
+  { seat: 9, name: '金水发言', alive: true, isSelf: false, isSheriff: false, occupied: true },
+  { seat: 10, name: '划水农民', alive: true, isSelf: false, isSheriff: false, occupied: true },
+  { seat: 11, name: '悍跳狼', alive: true, isSelf: false, isSheriff: false, occupied: true },
+  { seat: 12, name: '弃票观众', alive: true, isSelf: false, isSheriff: false, occupied: true },
 ];
 
 /** The canonical 12-seat board used by grid, pads, and spectator stories. */

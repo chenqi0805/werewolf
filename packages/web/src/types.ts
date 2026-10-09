@@ -30,6 +30,8 @@ export interface SeatView {
   role?: Role;
   /** Flipped idiot: alive and still speaking, but never votes again. */
   revealedIdiot?: boolean;
+  /** A session holds this seat. Undefined reads as occupied (mid-game rows are always seated). */
+  occupied?: boolean;
 }
 
 /** One entry in the seer's private check history. */

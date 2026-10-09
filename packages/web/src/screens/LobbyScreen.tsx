@@ -2,34 +2,46 @@ import { useState } from 'react';
 import type { JSX } from 'react';
 import type { PlayerView } from '@werewolf/server';
 
-import { seatViewsOf } from '../client/adapters';
+import { occupiedCountOf, roomErrorText, seatViewsOf } from '../client/adapters';
+import { leaveRoom, startGame, type GameSocket } from '../client/socketClient';
 import { SeatGrid } from '../components';
 import type { SeatView } from '../types';
-import { startGame, type GameSocket } from '../client/socketClient';
 import { TutorialScreen } from './TutorialScreen';
 
 interface LobbyScreenProps {
   view: PlayerView;
   roomCode: string;
   socket: GameSocket;
+  /** Runs after the server frees the seat — returns the player to the connect screen. */
+  onQuit: () => void;
 }
 
 /**
  * Pre-game waiting room: share the code, watch seats fill, start when ready.
  * The server rejects a start it does not allow; the code surfaces inline.
  */
-export function LobbyScreen({ view, roomCode, socket }: LobbyScreenProps): JSX.Element {
+export function LobbyScreen({ view, roomCode, socket, onQuit }: LobbyScreenProps): JSX.Element {
   const seats: SeatView[] = seatViewsOf(view);
-  const joined = seats.filter((s) => s.alive).length;
-  const [startError, setStartError] = useState<string | null>(null);
+  const joined = occupiedCountOf(seats);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
 
   async function handleStart(): Promise<void> {
-    setStartError(null);
+    setActionError(null);
     try {
       await startGame(socket);
     } catch (err) {
-      setStartError(err instanceof Error ? err.message : '开局失败，请重试');
+      setActionError(err instanceof Error ? roomErrorText(err.message) : '开局失败，请重试');
+    }
+  }
+
+  async function handleQuit(): Promise<void> {
+    setActionError(null);
+    try {
+      await leaveRoom(socket);
+      onQuit();
+    } catch (err) {
+      setActionError(err instanceof Error ? roomErrorText(err.message) : '退出失败，请重试');
     }
   }
 
@@ -59,10 +71,13 @@ export function LobbyScreen({ view, roomCode, socket }: LobbyScreenProps): JSX.E
           <button type="button" onClick={handleStart} disabled={joined < 5}>
             {joined < 5 ? '至少 5 人开局' : '开始游戏'}
           </button>
+          <button type="button" onClick={handleQuit}>
+            退出房间
+          </button>
         </div>
-        {startError !== null && (
+        {actionError !== null && (
           <p className="scr-error" role="alert">
-            {startError}
+            {actionError}
           </p>
         )}
         <p className="scr-caption">标准局 12 人：4 狼人 · 4 村民 · 预言家 · 女巫 · 猎人 · 白痴</p>
