@@ -14,6 +14,8 @@ export { SeerPad } from './SeerPad/SeerPad';
 export type { SeerPadProps } from './SeerPad/SeerPad';
 export { SpeechPanel } from './SpeechPanel/SpeechPanel';
 export type { SpeechPanelProps } from './SpeechPanel/SpeechPanel';
+export { StrategyPanel } from './StrategyPanel/StrategyPanel';
+export type { StrategyPanelProps } from './StrategyPanel/StrategyPanel';
 export { VotePad } from './VotePad/VotePad';
 export type { VotePadProps } from './VotePad/VotePad';
 export { DayLog } from './DayLog/DayLog';

@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerAction } from '@werewolf/engine';
-import type { ClientToServerEvents, ServerToClientEvents } from '@werewolf/server';
+import type { ClientToServerEvents, ServerToClientEvents, StrategyReply } from '@werewolf/server';
 import type { Socket } from 'socket.io-client';
 
-import { AckError, createRoom, joinRoom, rejoinRoom, sendAction, startGame } from './socketClient';
+import {
+  AckError,
+  createRoom,
+  joinRoom,
+  rejoinRoom,
+  requestStrategy,
+  sendAction,
+  startGame,
+} from './socketClient';
 
 type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -93,5 +101,30 @@ describe('AckError promise behavior', () => {
     ackOf(socket)({ roomCode: 'AB2C', seat: 1, sessionToken: 'tok' });
     await pending;
     expect(settled).toBe(true);
+  });
+});
+
+describe('requestStrategy', () => {
+  const reply: StrategyReply = {
+    lines: ['先报查验，再给警徽流。'],
+    reasoning: '起跳预言家要第一时间占据信息位。',
+    warnings: ['小心悍跳狼抢先报查杀。'],
+  };
+
+  it('emits assistant:strategy and resolves with the reply', async () => {
+    const socket = fakeSocket((_event, args) => {
+      (args[args.length - 1] as (resp: unknown) => void)(reply);
+    });
+    await expect(requestStrategy(socket)).resolves.toEqual(reply);
+    expect(socket.emitted[0]?.event).toBe('assistant:strategy');
+  });
+
+  it('rejects with AckError when the assistant is unavailable', async () => {
+    const socket = fakeSocket((_event, args) => {
+      (args[args.length - 1] as (resp: unknown) => void)({ error: 'ASSISTANT_UNAVAILABLE' });
+    });
+    const error = await requestStrategy(socket).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AckError);
+    expect((error as AckError).code).toBe('ASSISTANT_UNAVAILABLE');
   });
 });

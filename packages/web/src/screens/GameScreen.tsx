@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { JSX } from 'react';
 import type { PlayerAction, Seat } from '@werewolf/engine';
 
+import { requestStrategy, type GameSocket } from '../client/socketClient';
 import { ROLE_META } from '../roles';
 import type { SeatView } from '../types';
 import {
@@ -22,6 +23,7 @@ import {
   SpectatorView,
   SpeechHistory,
   SpeechPanel,
+  StrategyPanel,
   VotePad,
   WitchPad,
   WolfPad,
@@ -38,6 +40,7 @@ import {
   seerTargets,
   sheriffSignupState,
   speechContextOf,
+  strategyContextOf,
   voteContextOf,
 } from './gating';
 import { Countdown } from './Countdown';
@@ -47,6 +50,7 @@ interface GameScreenProps {
   view: PlayerView;
   roomCode: string;
   send: (action: PlayerAction) => void;
+  socket: GameSocket;
 }
 
 function Waiting({ note }: { note: string }): JSX.Element {
@@ -63,7 +67,7 @@ function CandidateList({ seats }: { seats: SeatView[] }): JSX.Element {
  * running day log. Every gate and action payload comes from the pure helpers
  * in `gating.ts` — this file only arranges JSX and forwards clicks.
  */
-export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Element {
+export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): JSX.Element {
   const seats: SeatView[] = seatViewsOf(view);
   const entries = logToEntries(view.log);
   const speechGroups = speechByDayOf(view.log);
@@ -97,6 +101,7 @@ export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Eleme
   const shot = hunterShotState(view);
   const votes = voteContextOf(view);
   const speechKind = speechContextOf(view);
+  const strategy = strategyContextOf(view);
 
   function onPick(kind: 'kill' | 'poison' | 'check' | 'shoot') {
     return (target: Seat) => {
@@ -210,13 +215,22 @@ export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Eleme
           )}
 
           {speechKind !== null && (
-            <SpeechPanel
-              messages={speechMessagesOf(view.log)}
-              speakingSeat={speakingSeatOf(step)}
-              mySeat={seat}
-              canSpeak={canSpeakNow(view)}
-              onSend={(text) => send({ type: 'SPEAK', actor: seat, text })}
-            />
+            <>
+              <SpeechPanel
+                messages={speechMessagesOf(view.log)}
+                speakingSeat={speakingSeatOf(step)}
+                mySeat={seat}
+                canSpeak={canSpeakNow(view)}
+                onSend={(text) => send({ type: 'SPEAK', actor: seat, text })}
+              />
+              {strategy !== null && (
+                <StrategyPanel
+                  role={strategy.role}
+                  dayRecords={strategy.dayRecords}
+                  onSuggest={() => requestStrategy(socket)}
+                />
+              )}
+            </>
           )}
 
           {votes !== null && (

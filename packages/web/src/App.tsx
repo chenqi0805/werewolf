@@ -88,7 +88,7 @@ export function App(): JSX.Element {
   } else if (view.step.kind === 'game-over') {
     screen = <GameOverScreen view={view} />;
   } else {
-    screen = <GameScreen view={view} roomCode={roomCode} send={send} />;
+    screen = <GameScreen view={view} roomCode={roomCode} send={send} socket={socket} />;
   }
 
   return (
