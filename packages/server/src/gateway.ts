@@ -6,6 +6,15 @@ import { RoomError } from './errors';
 import { RoomRegistry, type Room } from './room';
 import { clockKey, DEFAULT_TIMERS } from './defaults';
 import { eventsForSeat, viewFor, type PlayerView, type TimerInfo } from './view';
+import { attachAssistant, type AssistantOptions, type StrategyReply } from './assistant';
+import {
+  currentSpeechSlot,
+  handleVoiceFrame,
+  VoiceHub,
+  type SpeechSlot,
+  type VoiceChunk,
+  type VoiceOptions,
+} from './voice';
 
 /** Freeform speech longer than this is rejected as a bad action. */
 const MAX_SPEECH_LENGTH = 2000;
@@ -40,6 +49,8 @@ export interface ServerToClientEvents {
   'game:event': (event: GameEvent) => void;
   /** Per-socket rejection — never a disconnect, never a 500. */
   'game:error': (error: ErrorPayload) => void;
+  /** Relayed live-audio from the current speaker — never sent to the speaker. */
+  'voice:chunk': (chunk: VoiceChunk) => void;
 }
 
 export interface ClientToServerEvents {
@@ -48,6 +59,10 @@ export interface ClientToServerEvents {
   'room:rejoin': (code: string, token: string, ack: Ack<RejoinAck>) => void;
   'room:start': (ack: Ack<OkAck>) => void;
   'game:action': (action: PlayerAction) => void;
+  /** Raw mic audio from the current speaker of a speech slot; violations drop. */
+  'voice:frame': (chunk: ArrayBuffer) => void;
+  /** Ask the strategy assistant; the caller's own view is the only prompt source. */
+  'assistant:strategy': (ack: Ack<StrategyReply>) => void;
 }
 
 export interface SocketData {
@@ -72,7 +87,19 @@ type GatewaySocket = Socket<
 export type TimerOverrides = Record<string, number>;
 
 export interface GatewayOptions {
+  /** Phase clock overrides in ms, keyed by clockKey — tests shrink these. */
   timers?: TimerOverrides;
+  /**
+   * Voice relay + server-side STT fallback. Unset = relay only: frames still
+   * fan out to the room, but slots without a client transcript pass silently
+   * (no buffering, no OpenAI call).
+   */
+  voice?: VoiceOptions;
+  /**
+   * Strategy-assistant provider config. Unset = the event still exists and
+   * every request acks ASSISTANT_UNAVAILABLE.
+   */
+  assistant?: AssistantOptions;
 }
 
 /**
@@ -91,6 +118,13 @@ export function attachGateway(
   const roomTimers = new Map<string, NodeJS.Timeout>();
   /** The step deadline currently advertised to joining/rejoining sockets. */
   const deadlines = new Map<string, TimerInfo>();
+  const voiceHub = new VoiceHub(
+    {
+      socketsOf: (code) => roomSockets.get(code) ?? [],
+    },
+    opts?.voice ?? {},
+  );
+  attachAssistant(io, registry, opts?.assistant ?? {});
 
   function bind(socket: GatewaySocket, roomCode: string, seat: Seat | null): void {
     socket.data.roomCode = roomCode;
@@ -161,20 +195,72 @@ export function attachGateway(
     deadlines.set(room.code, { key, endsAt: Date.now() + ms });
     const timer = setTimeout(() => {
       roomTimers.delete(room.code);
-      try {
-        const applied = room.tick();
-        if (applied) {
-          broadcast(room, applied.events);
-        } else {
-          console.error(
-            `[werewolf] room ${room.code}: timer lapsed with no default to inject (phase ${room.state.phase})`,
-          );
-        }
-      } catch (error) {
-        console.error(`[werewolf] room ${room.code}: timer injection failed:`, error);
-      }
+      void expireRoom(room);
     }, ms);
     roomTimers.set(room.code, timer);
+  }
+
+  /** Shared expiry step: the phase's default actions, applied and broadcast. */
+  function finishExpiry(room: Room): void {
+    try {
+      const applied = room.tick();
+      if (applied) {
+        broadcast(room, applied.events);
+      } else {
+        console.error(
+          `[werewolf] room ${room.code}: timer lapsed with no default to inject (phase ${room.state.phase})`,
+        );
+      }
+    } catch (error) {
+      console.error(`[werewolf] room ${room.code}: timer injection failed:`, error);
+    }
+  }
+
+  /**
+   * Timer expiry. In a speech slot this is also the fallback-transcript
+   * deadline: with a pending buffer, an armed STT, and no client SPEAK, the
+   * PROCEED defers by at most the STT deadline while the buffer is
+   * transcribed and injected as the slot's speech.
+   */
+  async function expireRoom(room: Room): Promise<void> {
+    try {
+      const slot: SpeechSlot | null = currentSpeechSlot(room.state);
+      if (slot === null || !voiceHub.fallbackArmed()) {
+        finishExpiry(room);
+        return;
+      }
+      const audio = voiceHub.takeBuffer(room.code, slot.key);
+      if (audio === null) {
+        finishExpiry(room);
+        return;
+      }
+      const text = await voiceHub.transcribe(audio);
+      // The deferral is the only window where state can move: a client SPEAK
+      // re-arms the clock (the fresh timer owns the slot now), and a resolved
+      // game has neither clock nor slot. Either way the pending PROCEED is
+      // obsolete — this expiry's answer is done.
+      if (roomTimers.has(room.code)) return;
+      const again = currentSpeechSlot(room.state);
+      if (again === null || again.key !== slot.key) return;
+      if (text === null || text.trim() === '' || text.length > MAX_SPEECH_LENGTH) {
+        finishExpiry(room);
+        return;
+      }
+      try {
+        // The transcript is the speech: the same apply path a client uses.
+        const applied = room.applyPlayerAction({ type: 'SPEAK', actor: slot.seat, text });
+        broadcast(room, applied.events);
+      } catch (error) {
+        console.error(`[werewolf] room ${room.code}: fallback transcript injection failed:`, error);
+      }
+      // Hand the floor over whether or not the transcript landed.
+      finishExpiry(room);
+    } catch (error) {
+      // Defensive: the paths above are non-throwing by design; a surprise
+      // must not double-tick the room. A lost expiry is logged, not retried —
+      // the same semantics as the timer injection catch below.
+      console.error(`[werewolf] room ${room.code}: speech-slot expiry failed:`, error);
+    }
   }
 
   io.on('connection', (socket) => {
@@ -289,6 +375,11 @@ export function attachGateway(
       }
     });
 
+    socket.on('voice:frame', (chunk) => {
+      const { roomCode, seat } = socket.data;
+      handleVoiceFrame(voiceHub, registry, roomCode, seat, socket, chunk);
+    });
+
     socket.on('disconnect', () => {
       unbind(socket);
     });
@@ -298,6 +389,7 @@ export function attachGateway(
     for (const timer of roomTimers.values()) clearTimeout(timer);
     roomTimers.clear();
     deadlines.clear();
+    voiceHub.dropAll();
   };
 }
 
