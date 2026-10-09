@@ -1,0 +1,82 @@
+.pad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 560px;
+  padding: var(--space-6);
+  background: var(--surface-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.title {
+  margin: 0;
+  color: var(--camp-wolf);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.rowLabel {
+  color: var(--text-muted);
+}
+
+.wolfList {
+  color: var(--camp-wolf);
+  font-weight: var(--weight-semibold);
+}
+
+.packTarget {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.button {
+  flex: 1;
+  padding: var(--space-3) var(--space-4);
+  background: var(--camp-wolf);
+  border-radius: var(--radius-md);
+  color: var(--text-inverse);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  transition:
+    background var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.button:hover:enabled {
+  background: color-mix(in srgb, var(--camp-wolf) 85%, black);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.decline {
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+}
+
+.decline:hover:enabled {
+  background: var(--surface-hover);
+}

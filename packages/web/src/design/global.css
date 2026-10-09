@@ -1,0 +1,27 @@
+/*
+ * Base styles for the themed scope. The app shell and the Storybook decorator
+ * place data-theme + .theme-scope on a root element; tokens cascade from there.
+ */
+
+.theme-scope {
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--surface-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+.theme-scope *,
+.theme-scope *::before,
+.theme-scope *::after {
+  box-sizing: border-box;
+}
+
+.theme-scope button,
+.theme-scope input {
+  font-family: inherit;
+}
+
+.theme-scope :focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

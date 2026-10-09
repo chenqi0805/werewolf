@@ -1,0 +1,116 @@
+.reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 640px;
+  padding: var(--space-6);
+  background: var(--surface-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lifted);
+}
+
+.wolfWin {
+  background: var(--camp-wolf-soft);
+  box-shadow:
+    0 0 0 2px var(--camp-wolf),
+    var(--shadow-lifted);
+}
+
+.goodWin {
+  background: var(--camp-good-soft);
+  box-shadow:
+    0 0 0 2px var(--camp-good),
+    var(--shadow-lifted);
+}
+
+.winnerLabel {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+}
+
+.dayLabel {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.seats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lifted);
+}
+
+.wolfSeat {
+  box-shadow:
+    0 0 0 1px var(--camp-wolf),
+    var(--shadow-lifted);
+}
+
+.dead {
+  opacity: 0.55;
+}
+
+.seatNumber {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.roleName {
+  flex: 1;
+  font-weight: var(--weight-semibold);
+}
+
+.roleName[data-team='wolves'] {
+  color: var(--camp-wolf);
+}
+
+.roleName[data-team='good'] {
+  color: var(--camp-good);
+}
+
+.fate {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.badge {
+  flex-shrink: 0;
+  padding: 0 6px;
+  background: var(--state-warning-bg);
+  border-radius: var(--radius-full);
+  color: var(--state-warning-fg);
+  font-size: var(--text-xs);
+}
+
+.backButton {
+  align-self: center;
+  padding: var(--space-3) var(--space-8);
+  background: var(--camp-good);
+  border-radius: var(--radius-md);
+  color: var(--text-inverse);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
