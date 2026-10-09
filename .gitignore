@@ -7,3 +7,5 @@ storybook-static/
 .DS_Store
 packages/e2e/test-results/
 packages/e2e/playwright-report/
+# The default SQLite location (WEREWOLF_DB_PATH, data/werewolf.db under cwd)
+data/

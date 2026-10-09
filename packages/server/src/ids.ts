@@ -1,4 +1,4 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 
 /** Unambiguous alphabet — no 0/O/1/I — so codes read aloud cleanly. */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -19,4 +19,14 @@ export function makeRoomCode(taken: ReadonlySet<string>): string {
 /** Opaque per-seat bearer credential: whoever holds it reattaches to the seat. */
 export function makeToken(): string {
   return randomBytes(24).toString('base64url');
+}
+
+/**
+ * sha256 of a session token — the at-rest form everywhere but the join ack:
+ * the in-memory seat map and the persistence layer both hold hashes, so a
+ * restored room reattaches by hashing the presented token. Raw tokens are
+ * never stored, in memory or on disk.
+ */
+export function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }

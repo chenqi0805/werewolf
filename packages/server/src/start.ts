@@ -3,6 +3,7 @@ import type { GatewayOptions, TimerOverrides } from './gateway';
 import type { AssistantOptions } from './assistant';
 import type { VoiceOptions } from './voice';
 import { serveStatic } from './static';
+import { resolve } from 'node:path';
 
 // Dev/production entry: boots the room server on one HTTP port. The Vite dev
 // server proxies /socket.io here; in production the same process can serve
@@ -12,6 +13,10 @@ const timers = parseTimers(process.env.WEREWOLF_TIMERS);
 const webDist = process.env.WEREWOLF_WEB_DIST;
 const voice = parseVoiceEnv();
 const assistant = parseAssistantEnv();
+// Rooms persist by default: the SQLite file lands under the working
+// directory (the hosted deployment's workdir), so rooms, tokens, speeches,
+// votes, and clocks survive a restart. WEREWOLF_DB_PATH relocates it.
+const dbPath = process.env.WEREWOLF_DB_PATH ?? resolve('data', 'werewolf.db');
 
 const opts: GatewayOptions = {};
 if (timers !== null) opts.timers = timers;
@@ -22,13 +27,18 @@ if (assistant !== null) {
   opts.postgame = assistant;
 }
 
-const app = createApp(opts);
+const app = createApp({ ...opts, dbPath });
 if (webDist !== undefined && webDist !== '') {
   app.httpServer.on('request', serveStatic(webDist));
 }
 
 app.httpServer.listen(port, () => {
-  console.log(`werewolf room server listening on :${port}`);
+  // The bound port, not the configured one — WEREWOLF_PORT=0 means the OS
+  // assigns, and callers (tests, orchestrators) parse this line.
+  const addr = app.httpServer.address();
+  const bound = typeof addr === 'object' && addr !== null ? addr.port : port;
+  console.log(`werewolf room server listening on :${bound}`);
+  console.log(`werewolf rooms persist to ${dbPath}`);
 });
 
 function shutdown(signal: NodeJS.Signals): void {
