@@ -9,11 +9,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "start": "node src/start.ts"
+    "start": "tsx src/start.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.1",
     "socket.io-client": "^4.8.4",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   },
