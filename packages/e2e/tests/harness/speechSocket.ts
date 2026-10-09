@@ -33,7 +33,10 @@ async function ensureSeatSocket(seat: Seat, page: Page): Promise<SpeechSocket> {
   const existing = sockets.get(seat);
   if (existing) return existing;
 
-  const stored = await page.evaluate(() => window.localStorage.getItem('werewolf-session'));
+  // The e2e tsconfig has no DOM lib — read the page's localStorage through
+  // the string form of evaluate, which Playwright runs in the browser.
+  const stored = (await page.evaluate("() => window.localStorage.getItem('werewolf-session')")) as
+    string | null;
   if (stored === null) throw new Error(`seat ${seat} has no stored session to reattach`);
   const session = JSON.parse(stored) as StoredSession;
 

@@ -1,5 +1,5 @@
 import type { PlayerView } from '@werewolf/server';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { PlayerAction, Seat } from '@werewolf/engine';
 
@@ -16,6 +16,7 @@ import {
   speechMessagesOf,
 } from '../client/adapters';
 import { useVoiceSpeech } from '../client/useVoiceSpeech';
+import { createVoicePlayer, type VoicePlayer } from '../client/voicePlayer';
 import {
   DayLog,
   SeatGrid,
@@ -26,6 +27,7 @@ import {
   SpeechPanel,
   StrategyPanel,
   VotePad,
+  VoiceControls,
   WitchPad,
   WolfPad,
 } from '../components';
@@ -77,7 +79,24 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
   const { you } = view;
   const step = view.step;
   const [showTutorial, setShowTutorial] = useState(false);
+  const [muted, setMuted] = useState(false);
   const seat = you.seat;
+
+  // Live playback: one AudioContext player per screen, fed by the relayed
+  // `voice:chunk` frames. The speaker's own chunks never arrive (the server
+  // excludes them), so muting is a pure local toggle.
+  const playerRef = useRef<VoicePlayer | null>(null);
+  useEffect(() => {
+    const player = createVoicePlayer(socket);
+    playerRef.current = player;
+    return () => {
+      playerRef.current = null;
+      player.dispose();
+    };
+  }, [socket]);
+  useEffect(() => {
+    playerRef.current?.setMuted(muted);
+  }, [muted]);
 
   // Voice capture runs while the current speech slot is mine: mic frames go
   // out over `voice:frame`, the joined transcript auto-submits as SPEAK one
@@ -139,6 +158,7 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
             <Countdown timer={view.timer} />
           </div>
           <div className="scr-row">
+            <VoiceControls muted={muted} onToggle={() => setMuted((value) => !value)} />
             <button type="button" onClick={() => setShowTutorial(true)}>
               玩法教程
             </button>
