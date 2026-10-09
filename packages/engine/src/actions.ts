@@ -13,6 +13,10 @@ export type PlayerAction =
   /** Each living wolf votes; unique plurality wins, ties resolve to 空刀.
    *  `null` votes for no kill (空刀). */
   | { type: 'WOLF_KILL'; actor: Seat; target: Seat | null }
+  /** Protects a player from tonight's wolf kill (守卫, wolfking boards). */
+  | { type: 'GUARD_PROTECT'; actor: Seat; target: Seat }
+  /** Declines to protect anyone (空守). */
+  | { type: 'GUARD_PASS'; actor: Seat }
   /** Saves tonight's kill target. */
   | { type: 'WITCH_HEAL'; actor: Seat }
   /** One poison per game; self-poison is never legal. */

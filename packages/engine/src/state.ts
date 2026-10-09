@@ -1,4 +1,5 @@
 import type { BoardId } from './boards';
+import { BOARDS } from './boards';
 import type { EngineConfig } from './config';
 import type { GameEvent } from './events';
 import { GameError } from './errors';
@@ -25,6 +26,15 @@ export interface DeathRecord {
 
 export interface NightState {
   step: 'wolf' | 'witch' | 'seer';
+  /**
+   * The guard's decision slot on boards that wake him first (the state
+   * `step` field keeps the v1 literals; the guard turn precedes the wolf
+   * step). 'pending' — only GUARD_* actions are legal; 'done' — decided;
+   * null — no guard on this board (the exact v1 night shape).
+   */
+  guardTurn: 'pending' | 'done' | null;
+  /** Tonight's protection. Null when the guard passes or does not exist. */
+  protectTarget: Seat | null;
   /** Wolf seat → kill target (or null for a 空刀 vote). Latest vote wins. */
   wolfVotes: Partial<Record<Seat, Seat | null>>;
   killTarget: Seat | null;
@@ -94,6 +104,8 @@ export interface GameState {
   dayNumber: number;
   players: Record<Seat, PlayerState>;
   night: NightState | null;
+  /** Last night's protection — the 连守 check reads this, not tonight's choice. */
+  lastProtected: Seat | null;
   /** Night deaths awaiting their dawn announcement. */
   pendingDawn: DeathRecord[] | null;
   election: ElectionState | null;
@@ -136,8 +148,14 @@ export function findRole(state: GameState, role: Role): PlayerState | undefined 
 }
 
 export function freshNight(state: GameState): NightState {
+  const guardFirst = BOARDS[state.board].nightOrder[0] === 'guard';
   return {
     step: 'wolf',
+    // The guard wakes first on boards whose night order puts him ahead of
+    // the wolves — and only while a living guard exists to act; a dead
+    // guard's night proceeds exactly like the v1 shape.
+    guardTurn: guardFirst && (findRole(state, 'guard')?.alive ?? false) ? 'pending' : null,
+    protectTarget: null,
     wolfVotes: {},
     killTarget: null,
     healed: false,

@@ -2,6 +2,8 @@ import type { GameAction } from './actions';
 import type { GameEvent } from './events';
 import { GameError } from './errors';
 import {
+  handleGuardPass,
+  handleGuardProtect,
   handleSeerCheck,
   handleSeerPass,
   handleStartGame,
@@ -70,6 +72,12 @@ function route(state: GameState, action: GameAction, events: GameEvent[]): void 
       return;
     case 'WOLF_KILL':
       handleWolfKill(state, action, events);
+      return;
+    case 'GUARD_PROTECT':
+      handleGuardProtect(state, action, events);
+      return;
+    case 'GUARD_PASS':
+      handleGuardPass(state, action, events);
       return;
     case 'WITCH_HEAL':
       handleWitchHeal(state, action, events);

@@ -29,6 +29,9 @@ export type GameEvent =
   | { type: 'WOLF_KILL_VOTE'; actor: Seat; target: Seat | null }
   /** `null` = 空刀. Server-only; the witch's view reads state during her step. */
   | { type: 'KILL_TARGET_SET'; target: Seat | null }
+  /** Server-only: the guard's protection choice stays hidden. */
+  | { type: 'GUARD_PROTECTED'; actor: Seat; target: Seat }
+  | { type: 'GUARD_PASSED'; actor: Seat }
   | { type: 'WITCH_HEALED'; actor: Seat; target: Seat }
   | { type: 'WITCH_POISONED'; actor: Seat; target: Seat }
   | { type: 'WITCH_PASSED'; actor: Seat }
@@ -69,6 +72,8 @@ export function visibilityOf(event: GameEvent): EventVisibility {
     case 'DEATH_RESOLVED':
     case 'WOLF_KILL_VOTE':
     case 'KILL_TARGET_SET':
+    case 'GUARD_PROTECTED':
+    case 'GUARD_PASSED':
     case 'WITCH_HEALED':
     case 'WITCH_POISONED':
     case 'WITCH_PASSED':

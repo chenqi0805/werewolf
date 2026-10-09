@@ -73,6 +73,7 @@ export function createGame(
     dayNumber: 1,
     players,
     night: null,
+    lastProtected: null,
     pendingDawn: null,
     election: null,
     dawn: null,

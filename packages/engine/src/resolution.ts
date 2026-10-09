@@ -111,7 +111,9 @@ function finishResolutionStep(state: GameState, res: ResolutionState, events: Ga
 /** Night deaths: the win check fires here, before any election or dawn. */
 export function completeNight(state: GameState, events: GameEvent[]): void {
   const night = requireNight(state);
-  const deaths = computeNightDeaths(night);
+  const deaths = computeNightDeaths(state, night);
+  // The 连守 check on future nights reads last night's choice.
+  state.lastProtected = night.protectTarget;
   state.night = null;
   state.pendingDawn = deaths.map((d) => applyDeath(state, d.seat, d.cause, events));
   if (checkGameOver(state, events)) return;
@@ -130,15 +132,22 @@ export function completeNight(state: GameState, events: GameEvent[]): void {
 }
 
 /**
- * Wolf kill vs heal vs poison. Poison overrides heal on the same target;
- * causes matter downstream for hunter eligibility. Empty by design on 平安夜.
+ * Wolf kill vs guard protection vs witch heal vs poison. Protection and the
+ * heal each turn the knife, but poison overrides both; 同守同救 (protection
+ * plus heal on the same target) cancels them out — the knife lands (奶穿).
+ * Empty by design on 平安夜.
  */
-function computeNightDeaths(night: NightState): Array<{ seat: Seat; cause: DeathCause }> {
+function computeNightDeaths(
+  state: GameState,
+  night: NightState,
+): Array<{ seat: Seat; cause: DeathCause }> {
   const deaths: Array<{ seat: Seat; cause: DeathCause }> = [];
-  const { killTarget, poisonTarget, healed } = night;
+  const { killTarget, poisonTarget, healed, protectTarget } = night;
   if (killTarget !== null) {
     const poisoned = poisonTarget === killTarget;
-    if (!healed || poisoned) {
+    const guarded = protectTarget === killTarget;
+    const milkedThrough = guarded && healed && state.config.guardHealSameTarget === 'death';
+    if (poisoned || milkedThrough || (!healed && !guarded)) {
       deaths.push({ seat: killTarget, cause: poisoned ? 'poison' : 'wolf-kill' });
     }
   }
