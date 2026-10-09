@@ -49,6 +49,7 @@ export {
 export {
   attachGateway,
   createApp,
+  type Ack,
   type AppHandle,
   type GatewayOptions,
   type TimerOverrides,

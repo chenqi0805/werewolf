@@ -22,7 +22,7 @@ import {
 /** Freeform speech longer than this is rejected as a bad action. */
 const MAX_SPEECH_LENGTH = 2000;
 
-type Ack<T> = (resp: T | { error: string }) => void;
+export type Ack<T> = (resp: T | { error: string }) => void;
 
 export interface CreateAck {
   roomCode: string;
