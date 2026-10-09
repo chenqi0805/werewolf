@@ -15,10 +15,16 @@ import { campOf, GOD_ROLES } from './types';
  */
 export function winCheck(state: GameState): 'wolves' | 'good' | null {
   const ps = Object.values(state.players);
-  if (ps.every((p) => campOf(p.role) !== 'wolf' || !p.alive)) return 'good';
+  const wolvesWiped = ps.every((p) => campOf(p.role) !== 'wolf' || !p.alive);
   const villagersAllDead = ps.filter((p) => p.role === 'villager').every((p) => !p.alive);
   const godsAllDead = ps.filter((p) => GOD_ROLES.includes(p.role)).every((p) => !p.alive);
-  return villagersAllDead || godsAllDead ? 'wolves' : null;
+  const goodWipedOut = villagersAllDead || godsAllDead;
+  // One settlement completing both camps' win conditions: 狼刀在先 boards
+  // rule for the wolves; the classic board keeps the v1 ruling — good wins
+  // ties.
+  if (wolvesWiped && goodWipedOut) return state.config.wolfKnifeFirst ? 'wolves' : 'good';
+  if (wolvesWiped) return 'good';
+  return goodWipedOut ? 'wolves' : null;
 }
 
 export function gameOver(state: GameState, winner: 'wolves' | 'good', events: GameEvent[]): void {

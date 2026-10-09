@@ -6,6 +6,8 @@ import {
   apply,
   expectGameError,
   holdElection,
+  newGame,
+  nightKill,
   openDay,
   P,
   throughDayOpen,
@@ -207,5 +209,44 @@ describe('白狼王 events and windows', () => {
   it('self-destruct deaths never qualify for last words by default', () => {
     const s = newWolfKingGame();
     expect(applyDeath(s, 4, 'self-destruct', []).lastWordsEligible).toBe(false);
+  });
+});
+
+describe('per-board rule config', () => {
+  it('the wolfking witch may never self-save; the classic witch may on night 1', () => {
+    let s = apply(newWolfKingGame(), { type: 'START_GAME' });
+    s = apply(s, { type: 'GUARD_PASS', actor: 12 });
+    s = nightKillWK(s, 10); // the wolves knife the witch herself
+    expectGameError(s, { type: 'WITCH_HEAL', actor: 10 }, 'POTION_SELF_SAVE');
+    // The classic board's night-1 self-save is v1 behavior, asserted by the
+    // baseline witch suite — here only the per-board split matters.
+    const classic = apply(newGame(), { type: 'START_GAME' });
+    const knifed = nightKill(classic, 10);
+    const healed = apply(knifed, { type: 'WITCH_HEAL', actor: 10 });
+    expect(P(healed, 10).alive).toBe(true);
+  });
+
+  it('狼刀在先: one settlement completing both sides hands the win to the wolves', () => {
+    // Wolfking default: 狼刀在先 on.
+    const s = newWolfKingGame();
+    for (const seat of [1, 2, 3, 4] as const) applyDeath(s, seat, 'wolf-kill', []);
+    for (const seat of [5, 6, 7, 8] as const) applyDeath(s, seat, 'shot', []);
+    // All wolf-camp dead AND all villagers dead (gods alive) in one batch.
+    expect(winCheck(s)).toBe('wolves');
+    // The classic ruling: good wins the same tie.
+    const s2 = newWolfKingGame({ wolfKnifeFirst: false });
+    for (const seat of [1, 2, 3, 4] as const) applyDeath(s2, seat, 'wolf-kill', []);
+    for (const seat of [5, 6, 7, 8] as const) applyDeath(s2, seat, 'shot', []);
+    expect(winCheck(s2)).toBe('good');
+  });
+
+  it('the classic board keeps the v1 win-check semantics', () => {
+    const s = newGame();
+    for (const seat of [1, 2, 3, 4] as const) applyDeath(s, seat, 'wolf-kill', []);
+    expect(winCheck(s)).toBe('good');
+    // Wolves still win 屠边 outright when no tie exists.
+    const s2 = newGame();
+    for (const seat of [5, 6, 7, 8] as const) applyDeath(s2, seat, 'wolf-kill', []);
+    expect(winCheck(s2)).toBe('wolves');
   });
 });
