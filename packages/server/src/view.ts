@@ -171,7 +171,11 @@ function stepView(state: GameState): StepView {
  * public information only. Dead players keep their own identity but drop
  * role-specific extras — the dead watch like spectators until game-over.
  */
-export function viewFor(state: GameState, seat: Seat | null, timer: TimerInfo | null = null): PlayerView {
+export function viewFor(
+  state: GameState,
+  seat: Seat | null,
+  timer: TimerInfo | null = null,
+): PlayerView {
   const over = state.phase === 'game-over';
   const viewer = seat === null ? null : (state.players[seat] ?? null);
   const revealed = publiclyRevealed(state);

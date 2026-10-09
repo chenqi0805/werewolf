@@ -15,7 +15,10 @@ import {
 
 const rigs: Rig[] = [];
 
-async function seatTwelve(rig: Awaited<ReturnType<typeof startServer>>, code: string): Promise<void> {
+async function seatTwelve(
+  rig: Awaited<ReturnType<typeof startServer>>,
+  code: string,
+): Promise<void> {
   for (const joined of await connectAll(rig, 11)) await joinRoom(joined.client, code);
 }
 
