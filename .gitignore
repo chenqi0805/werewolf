@@ -5,3 +5,5 @@ storybook-static/
 *.log
 *.tsbuildinfo
 .DS_Store
+packages/e2e/test-results/
+packages/e2e/playwright-report/

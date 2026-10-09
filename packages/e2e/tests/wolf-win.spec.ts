@@ -1,0 +1,40 @@
+import { expect, test } from '@playwright/test';
+
+import { playScriptedGame } from './harness/driver';
+import { wolfWinPlan } from './harness/plans';
+import { dayLogText, revealFates } from './harness/reveal';
+import { openTable } from './harness/table';
+
+/** Evidence directory for game-over screenshots (CI artifact / QA upload). */
+const EVIDENCE_DIR = process.env.WEREWOLF_EVIDENCE_DIR;
+
+test('scenario A: 12 seats play a full game to a wolf win — 屠边 via the villagers', async ({
+  browser,
+}) => {
+  const table = await openTable(browser);
+  try {
+    const roles = new Map(table.seats.map((seat) => [seat.seat, seat.role]));
+    const winner = await playScriptedGame(table, wolfWinPlan(roles), {
+      label: 'wolf-win',
+      evidenceDir: EVIDENCE_DIR,
+    });
+    expect(winner).toBe('wolves');
+
+    // 屠边 via the villagers: all four villagers are out, every other seat
+    // survived — no god died, no exile ever landed, the hunter never shot.
+    const fates = await revealFates(table.seats[0].page);
+    for (const [seat, role] of roles) {
+      expect(fates.get(seat), `seat ${seat} (${role}) reveal row`).toBeDefined();
+      if (role === 'villager') expect(fates.get(seat), `seat ${seat}`).toBe('出局');
+      else expect(fates.get(seat), `seat ${seat}`).toBe('存活');
+    }
+
+    const log = await dayLogText(table.seats[0].page);
+    const announced = log.match(/昨晚出局/g)?.length ?? 0;
+    expect(announced, 'night deaths announced in the public log').toBeGreaterThanOrEqual(3);
+    expect(log).not.toContain('被放逐出局');
+    expect(log).not.toContain('猎人开枪');
+  } finally {
+    await table.close();
+  }
+});
