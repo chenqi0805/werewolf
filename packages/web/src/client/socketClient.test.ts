@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerAction } from '@werewolf/engine';
-import type { ClientToServerEvents, ServerToClientEvents, StrategyReply } from '@werewolf/server';
+import type {
+  ClientToServerEvents,
+  PostgameReply,
+  ServerToClientEvents,
+  StrategyReply,
+} from '@werewolf/server';
 import type { Socket } from 'socket.io-client';
 
 import {
@@ -9,6 +14,7 @@ import {
   joinRoom,
   leaveRoom,
   rejoinRoom,
+  requestPostgameAnalysis,
   requestStrategy,
   sendAction,
   startGame,
@@ -146,5 +152,44 @@ describe('leaveRoom', () => {
     const error = await leaveRoom(socket).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AckError);
     expect((error as AckError).code).toBe('ALREADY_STARTED');
+  });
+});
+
+describe('requestPostgameAnalysis', () => {
+  const reply: PostgameReply = {
+    summary: '狼队靠警徽流误导放逐，好人核心出局后屠边失败，好人阵营险胜。',
+    keyMoments: ['首夜狼刀带走2号，遗言指向7号。', '第1天放逐7号，猎人开枪带走10号。'],
+    mvp: 5,
+    ratings: [
+      {
+        seat: 5,
+        score: 9,
+        rationale: '全场最清晰的局面阅读。',
+        highlight: '关键时刻带队放逐悍跳狼。',
+      },
+    ],
+  };
+
+  it('emits postgame:analysis and resolves with the shared review', async () => {
+    const socket = fakeSocket((_event, args) => {
+      (args[args.length - 1] as (resp: unknown) => void)(reply);
+    });
+    await expect(requestPostgameAnalysis(socket)).resolves.toEqual(reply);
+    expect(socket.emitted[0]?.event).toBe('postgame:analysis');
+  });
+
+  it('rejects with AckError when the game is not over', async () => {
+    const socket = fakeSocket((_event, args) => {
+      (args[args.length - 1] as (resp: unknown) => void)({ error: 'NOT_GAME_OVER' });
+    });
+    const error = await requestPostgameAnalysis(socket).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AckError);
+    expect((error as AckError).code).toBe('NOT_GAME_OVER');
+  });
+
+  it('rejects with AckError when there is no socket', async () => {
+    const error = await requestPostgameAnalysis(null).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AckError);
+    expect((error as AckError).code).toBe('NOT_IN_ROOM');
   });
 });

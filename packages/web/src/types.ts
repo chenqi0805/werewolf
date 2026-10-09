@@ -97,3 +97,25 @@ export interface PlayerReveal {
   /** Died while holding the sheriff badge. */
   hasBadge: boolean;
 }
+
+/** One seat's deterministic post-game accounting for the 复盘 stats grid. */
+export interface PlayerPostgameStat {
+  seat: Seat;
+  name: string;
+  role: Role;
+  /** Accepted speeches across all four contexts (last words included). */
+  speeches: number;
+  speechChars: number;
+  /** Full days alive: death day − 1 for the dead, the final day for survivors. */
+  daysSurvived: number;
+  /**
+   * Ballots the seat cast. The public log never names voters (vote events
+   * are server-only, even at game over), so the client derivation always
+   * sees 0; kept for shape parity with the server's PostgameStat.
+   */
+  votesCast: number;
+  /** Weighted exile votes received across all tallies (the sheriff's vote counts 1.5). */
+  votesReceived: number;
+  /** zh fate line, e.g. 首夜出局 / 第2天放逐 — null when alive at game end. */
+  death: string | null;
+}

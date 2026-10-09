@@ -24,5 +24,7 @@ export { SpeechHistory } from './SpeechHistory/SpeechHistory';
 export type { SpeechHistoryProps } from './SpeechHistory/SpeechHistory';
 export { GameOverReveal } from './GameOverReveal/GameOverReveal';
 export type { GameOverRevealProps } from './GameOverReveal/GameOverReveal';
+export { PostgameReview } from './PostgameReview/PostgameReview';
+export type { PostgameReviewProps } from './PostgameReview/PostgameReview';
 export { SpectatorView } from './SpectatorView/SpectatorView';
 export type { SpectatorViewProps } from './SpectatorView/SpectatorView';
