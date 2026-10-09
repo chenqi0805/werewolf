@@ -9,7 +9,9 @@
 /** Seat number, 1..12. Seat order drives speech and vote order. */
 export type Seat = number;
 
-export type Role = 'werewolf' | 'villager' | 'seer' | 'witch' | 'hunter' | 'idiot';
+// Kept in sync with the engine's board registry (v2 adds 白狼王 + guard).
+export type Role =
+  'werewolf' | 'white_wolf_king' | 'villager' | 'seer' | 'witch' | 'hunter' | 'guard' | 'idiot';
 
 export type Camp = 'wolves' | 'good';
 

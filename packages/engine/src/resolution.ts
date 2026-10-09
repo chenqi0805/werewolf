@@ -3,21 +3,28 @@ import { GameError } from './errors';
 import type { DeathCause, DeathRecord, GameState, NightState, ResolutionState } from './state';
 import { freshNight, getPlayer, livingPlayers, requireNight } from './state';
 import type { Seat } from './types';
-import { GOD_ROLES } from './types';
+import { campOf, GOD_ROLES } from './types';
 
 /**
- * 屠边 win check. Wolves win when every villager is dead OR all four gods are
- * dead; good wins when every wolf is dead. If both sides are somehow wiped in
- * the same step, "all wolves dead" is checked first (good wins).
+ * 屠边 win check. Wolves win when every wolf-camp player is dead OR all four
+ * gods are dead; good wins when every wolf is dead. If both sides are somehow
+ * wiped in the same step, "all wolves dead" is checked first — the v1 ruling
+ * (good wins ties) that boards may invert via 狼刀在先.
  *
  * Called exactly once per death-application batch — never mid-action.
  */
 export function winCheck(state: GameState): 'wolves' | 'good' | null {
   const ps = Object.values(state.players);
-  if (ps.every((p) => p.role !== 'werewolf' || !p.alive)) return 'good';
+  const wolvesWiped = ps.every((p) => campOf(p.role) !== 'wolf' || !p.alive);
   const villagersAllDead = ps.filter((p) => p.role === 'villager').every((p) => !p.alive);
   const godsAllDead = ps.filter((p) => GOD_ROLES.includes(p.role)).every((p) => !p.alive);
-  return villagersAllDead || godsAllDead ? 'wolves' : null;
+  const goodWipedOut = villagersAllDead || godsAllDead;
+  // One settlement completing both camps' win conditions: 狼刀在先 boards
+  // rule for the wolves; the classic board keeps the v1 ruling — good wins
+  // ties.
+  if (wolvesWiped && goodWipedOut) return state.config.wolfKnifeFirst ? 'wolves' : 'good';
+  if (wolvesWiped) return 'good';
+  return goodWipedOut ? 'wolves' : null;
 }
 
 export function gameOver(state: GameState, winner: 'wolves' | 'good', events: GameEvent[]): void {
@@ -49,6 +56,7 @@ export function applyDeath(
   if (!p.alive) throw new GameError('PLAYER_DEAD', `Seat ${seat} is already dead.`);
   p.alive = false;
   const shotUsed = p.private.kind === 'hunter' ? p.private.shotUsed : false;
+  const destructUsed = p.private.kind === 'white_wolf_king' ? p.private.destructUsed : false;
   const record: DeathRecord = {
     seat,
     cause,
@@ -57,12 +65,18 @@ export function applyDeath(
       !shotUsed &&
       (cause !== 'poison' || !state.config.poisonSilencesHunter),
     hunterWindowDone: false,
+    // The 白狼王's death window opens only on his own exile settlement —
+    // poison and the night kill silence the skill entirely.
+    destructWindow: p.role === 'white_wolf_king' && cause === 'exile' && !destructUsed,
+    destructWindowDone: false,
     badgePass: p.hasBadge,
     badgeDone: false,
     lastWordsEligible:
-      state.config.nightDeathLastWords === 'night1-only' &&
-      state.dayNumber === 1 &&
-      (cause === 'wolf-kill' || cause === 'poison'),
+      (state.config.nightDeathLastWords === 'night1-only' &&
+        state.dayNumber === 1 &&
+        (cause === 'wolf-kill' || cause === 'poison')) ||
+      // House-rule knob: destruct casualties may earn last words.
+      (cause === 'self-destruct' && state.config.destructLastWords),
     announced: false,
   };
   events.push({ type: 'DEATH_RESOLVED', seat, cause });
@@ -91,6 +105,10 @@ export function drainResolution(state: GameState, events: GameEvent[]): void {
       state.phase = 'badge-pass';
       return;
     }
+    if (head.destructWindow && !head.destructWindowDone) {
+      state.phase = 'hunter-shot';
+      return;
+    }
     if (head.hunterWindow && !head.hunterWindowDone) {
       state.phase = 'hunter-shot';
       return;
@@ -110,7 +128,9 @@ function finishResolutionStep(state: GameState, res: ResolutionState, events: Ga
 /** Night deaths: the win check fires here, before any election or dawn. */
 export function completeNight(state: GameState, events: GameEvent[]): void {
   const night = requireNight(state);
-  const deaths = computeNightDeaths(night);
+  const deaths = computeNightDeaths(state, night);
+  // The 连守 check on future nights reads last night's choice.
+  state.lastProtected = night.protectTarget;
   state.night = null;
   state.pendingDawn = deaths.map((d) => applyDeath(state, d.seat, d.cause, events));
   if (checkGameOver(state, events)) return;
@@ -129,15 +149,22 @@ export function completeNight(state: GameState, events: GameEvent[]): void {
 }
 
 /**
- * Wolf kill vs heal vs poison. Poison overrides heal on the same target;
- * causes matter downstream for hunter eligibility. Empty by design on 平安夜.
+ * Wolf kill vs guard protection vs witch heal vs poison. Protection and the
+ * heal each turn the knife, but poison overrides both; 同守同救 (protection
+ * plus heal on the same target) cancels them out — the knife lands (奶穿).
+ * Empty by design on 平安夜.
  */
-function computeNightDeaths(night: NightState): Array<{ seat: Seat; cause: DeathCause }> {
+function computeNightDeaths(
+  state: GameState,
+  night: NightState,
+): Array<{ seat: Seat; cause: DeathCause }> {
   const deaths: Array<{ seat: Seat; cause: DeathCause }> = [];
-  const { killTarget, poisonTarget, healed } = night;
+  const { killTarget, poisonTarget, healed, protectTarget } = night;
   if (killTarget !== null) {
     const poisoned = poisonTarget === killTarget;
-    if (!healed || poisoned) {
+    const guarded = protectTarget === killTarget;
+    const milkedThrough = guarded && healed && state.config.guardHealSameTarget === 'death';
+    if (poisoned || milkedThrough || (!healed && !guarded)) {
       deaths.push({ seat: killTarget, cause: poisoned ? 'poison' : 'wolf-kill' });
     }
   }

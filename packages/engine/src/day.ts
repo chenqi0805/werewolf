@@ -217,6 +217,9 @@ export function resolveExileVote(state: GameState, events: GameEvent[], revote: 
 
 function resolveExileTarget(state: GameState, seat: Seat, events: GameEvent[]): void {
   const p = getPlayer(state, seat);
+  // Idiot branches are board-conditional by construction: boards without the
+  // idiot never seat one, so these checks are unreachable there — kept, not
+  // deleted, per the board-registry contract.
   if (p.revealedIdiot && state.config.idiotUnexilableAfterReveal) {
     events.push({ type: 'EXILE_BLOCKED_BY_IDIOT', seat });
     enterNight(state, events);
@@ -255,6 +258,105 @@ function interruptHead(state: GameState) {
   const head = state.resolution?.queue[0];
   if (!head) throw new GameError('WRONG_PHASE', 'No interrupt is in progress.');
   return head;
+}
+
+/**
+ * The 白狼王 self-destructs — during the day's speech rounds (voluntarily)
+ * or at his own exile settlement (the death window). He reveals, dies, takes
+ * his target with him, and the day ends immediately: night falls after the
+ * interrupt queue drains. Poison and the night kill silence him — a dead
+ * king has no voice, and his death record opens no window for those causes.
+ */
+export function handleWolfKingDestruct(
+  state: GameState,
+  action: Extract<GameAction, { type: 'WOLF_KING_DESTRUCT' }>,
+  events: GameEvent[],
+): void {
+  const actor = getPlayer(state, action.actor);
+  const settlementHead = state.phase === 'hunter-shot' ? state.resolution?.queue[0] : undefined;
+  const settlementWindow =
+    settlementHead !== undefined &&
+    settlementHead.seat === action.actor &&
+    settlementHead.destructWindow &&
+    !settlementHead.destructWindowDone;
+  // A dead king may still fire exactly one window — his own exile settlement,
+  // the same privilege a dying hunter's shot gets.
+  if (!actor.alive && !settlementWindow) {
+    throw new GameError('PLAYER_DEAD', 'Dead players cannot act.');
+  }
+  if (actor.role !== 'white_wolf_king') {
+    throw new GameError('NOT_YOUR_TURN', 'Only the 白狼王 self-destructs.');
+  }
+  const priv = actor.private;
+  if (priv.kind !== 'white_wolf_king' || priv.destructUsed) {
+    throw new GameError('ALREADY_DONE', 'The self-destruct has already been used.');
+  }
+  if (!settlementWindow && state.phase !== 'speech' && state.phase !== 'pk-speech') {
+    throw new GameError('WRONG_PHASE', 'No 白狼王 destruct window is open.');
+  }
+  if (action.target === action.actor) {
+    throw new GameError('INVALID_TARGET', 'The 白狼王 cannot take himself.');
+  }
+  const target = requireLivingTarget(state, action.target);
+
+  priv.destructUsed = true;
+  if (settlementWindow) settlementHead.destructWindowDone = true;
+  events.push({ type: 'WHITE_WOLF_KING_DESTRUCTED', actor: action.actor, target: target.seat });
+
+  // 双爆吞警徽: the Nth destruct destroys the badge instead of passing it
+  // (0 disables the rule). One king cannot reach 2 in a legal game — the
+  // knob exists for house variants that let more wolves self-destruct.
+  const prior = state.log.filter((e) => e.type === 'WHITE_WOLF_KING_DESTRUCTED').length;
+  const swallow =
+    state.config.destructBadgeSwallow > 0 && prior + 1 === state.config.destructBadgeSwallow;
+
+  // At the settlement his death already stands (the exile); mid-speech he
+  // dies by his own hand.
+  const kingRecord = settlementWindow
+    ? settlementHead
+    : applyDeath(state, action.actor, 'self-destruct', events);
+  const targetRecord = applyDeath(state, target.seat, 'self-destruct', events);
+  if (swallow) {
+    for (const record of [kingRecord, targetRecord]) {
+      if (!record.badgePass) continue;
+      record.badgePass = false;
+      record.badgeDone = true;
+      getPlayer(state, record.seat).hasBadge = false;
+      events.push({ type: 'BADGE_DESTROYED', from: record.seat });
+    }
+  }
+
+  if (settlementWindow) {
+    // The exile settlement's queue already exists — the taken player's
+    // interrupts (badge, hunter shot) cascade from it.
+    state.resolution?.queue.push(targetRecord);
+    drainResolution(state, events);
+    return;
+  }
+  // Mid-speech: the day ends immediately — night falls after interrupts.
+  state.resolution = {
+    origin: 'day',
+    queue: [kingRecord, targetRecord],
+    newDeaths: true,
+  };
+  drainResolution(state, events);
+}
+
+export function handleWolfKingPass(
+  state: GameState,
+  action: Extract<GameAction, { type: 'WOLF_KING_PASS' }>,
+  events: GameEvent[],
+): void {
+  if (state.phase !== 'hunter-shot') {
+    throw new GameError('WRONG_PHASE', 'No 白狼王 destruct window is open.');
+  }
+  const head = interruptHead(state);
+  if (head.seat !== action.actor || !head.destructWindow || head.destructWindowDone) {
+    throw new GameError('NOT_YOUR_TURN', 'No destruct window is open for you.');
+  }
+  head.destructWindowDone = true;
+  events.push({ type: 'WOLF_KING_PASSED', actor: action.actor });
+  drainResolution(state, events);
 }
 
 export function handleHunterShoot(

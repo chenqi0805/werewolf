@@ -2,6 +2,8 @@ import type { GameAction } from './actions';
 import type { GameEvent } from './events';
 import { GameError } from './errors';
 import {
+  handleGuardPass,
+  handleGuardProtect,
   handleSeerCheck,
   handleSeerPass,
   handleStartGame,
@@ -21,6 +23,8 @@ import {
   handleSetSpeechDirection,
   handleSheriffPass,
   handleSpeak,
+  handleWolfKingDestruct,
+  handleWolfKingPass,
 } from './day';
 import { deepClone, type GameState } from './state';
 import {
@@ -71,6 +75,12 @@ function route(state: GameState, action: GameAction, events: GameEvent[]): void 
     case 'WOLF_KILL':
       handleWolfKill(state, action, events);
       return;
+    case 'GUARD_PROTECT':
+      handleGuardProtect(state, action, events);
+      return;
+    case 'GUARD_PASS':
+      handleGuardPass(state, action, events);
+      return;
     case 'WITCH_HEAL':
       handleWitchHeal(state, action, events);
       return;
@@ -109,6 +119,12 @@ function route(state: GameState, action: GameAction, events: GameEvent[]): void 
       return;
     case 'HUNTER_PASS':
       handleHunterPass(state, action, events);
+      return;
+    case 'WOLF_KING_DESTRUCT':
+      handleWolfKingDestruct(state, action, events);
+      return;
+    case 'WOLF_KING_PASS':
+      handleWolfKingPass(state, action, events);
       return;
     case 'SET_SPEECH_DIRECTION':
       handleSetSpeechDirection(state, action, events);

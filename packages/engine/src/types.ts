@@ -11,7 +11,8 @@ export type Seat = number;
 /** The standard 12-player 预女猎白 board. */
 export const SEAT_COUNT = 12;
 
-export type Role = 'werewolf' | 'villager' | 'seer' | 'witch' | 'hunter' | 'idiot';
+export type Role =
+  'werewolf' | 'white_wolf_king' | 'villager' | 'seer' | 'witch' | 'hunter' | 'guard' | 'idiot';
 
 /** One seat's dealt role, produced by the room server's shuffled deck. */
 export interface SeatAssignment {
@@ -22,11 +23,16 @@ export interface SeatAssignment {
 /** The two camps. Villagers and gods are both 'good'. */
 export type Camp = 'wolf' | 'good';
 
-/** The four god roles for the 屠边 win condition. */
-export const GOD_ROLES: readonly Role[] = ['seer', 'witch', 'hunter', 'idiot'];
+/** The god roles for the 屠边 win condition. The guard joins on wolfking boards. */
+export const GOD_ROLES: readonly Role[] = ['seer', 'witch', 'hunter', 'guard', 'idiot'];
 
+/**
+ * The camp a role plays for. Seer results, the wolf-kill electorate, the
+ * wolf-pack view, and the win check all route through here — 白狼王 camps
+ * with the pack, so no site may compare `role === 'werewolf'` directly.
+ */
 export function campOf(role: Role): Camp {
-  return role === 'werewolf' ? 'wolf' : 'good';
+  return role === 'werewolf' || role === 'white_wolf_king' ? 'wolf' : 'good';
 }
 
 /**
@@ -60,10 +66,12 @@ export type Phase =
  */
 export type PrivateState =
   | { kind: 'werewolf' }
+  | { kind: 'white_wolf_king'; destructUsed: boolean }
   | { kind: 'villager' }
   | { kind: 'seer'; checks: Partial<Record<Seat, Camp>> }
   | { kind: 'witch'; healUsed: boolean; poisonUsed: boolean }
   | { kind: 'hunter'; shotUsed: boolean }
+  | { kind: 'guard' }
   | { kind: 'idiot' };
 
 export interface PlayerState {

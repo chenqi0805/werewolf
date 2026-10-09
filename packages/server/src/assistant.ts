@@ -115,11 +115,13 @@ export function speechRecordsOf(log: readonly GameEvent[]): SpeechRecord[] {
 
 const ROLE_LABELS: Record<Role, string> = {
   werewolf: '狼人',
+  white_wolf_king: '白狼王',
   villager: '村民',
   seer: '预言家',
   witch: '女巫',
   hunter: '猎人',
   idiot: '白痴',
+  guard: '守卫',
 };
 
 const CONTEXT_LABELS: Record<SpeechContext, string> = {

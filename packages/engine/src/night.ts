@@ -12,9 +12,13 @@ import {
   requireNight,
 } from './state';
 import type { Seat } from './types';
+import { campOf } from './types';
 import { plurality } from './votes';
 
-/** Night order: 狼人 → 女巫 → 预言家. No guard exists on this board. */
+/**
+ * Opens night 1. On guard-first boards (nightOrder[0] === 'guard') the fresh
+ * night waits on the guard before the wolves; the classic order is unchanged.
+ */
 export function handleStartGame(state: GameState, events: GameEvent[]): void {
   if (state.phase !== 'lobby') {
     throw new GameError('WRONG_PHASE', 'The game has already started.');
@@ -23,6 +27,67 @@ export function handleStartGame(state: GameState, events: GameEvent[]): void {
   state.night = freshNight(state);
   events.push({ type: 'GAME_STARTED' });
   events.push({ type: 'NIGHT_BEGAN', dayNumber: state.dayNumber });
+}
+
+/** True while the night is waiting on the guard's decision. */
+export function guardTurnPending(state: GameState): boolean {
+  return state.night?.guardTurn === 'pending';
+}
+
+/**
+ * The guard protects one player (possibly himself) from tonight's wolf kill.
+ * Protection is registered on the night state; the kill-vs-heal-vs-poison
+ * combinatorics resolve in computeNightDeaths at dawn.
+ */
+export function handleGuardProtect(
+  state: GameState,
+  action: Extract<GameAction, { type: 'GUARD_PROTECT' }>,
+  events: GameEvent[],
+): void {
+  const night = requireNight(state);
+  if (night.guardTurn !== 'pending') {
+    throw new GameError('NOT_YOUR_TURN', 'It is not the guard’s turn.');
+  }
+  const actor = getPlayer(state, action.actor);
+  if (!actor.alive) throw new GameError('PLAYER_DEAD', 'Dead players cannot act.');
+  if (actor.role !== 'guard') {
+    throw new GameError('NOT_YOUR_TURN', 'Only the guard protects at night.');
+  }
+  const target = requireLivingTarget(state, action.target);
+  if (!state.config.guardSelfProtect && target.seat === actor.seat) {
+    throw new GameError('INVALID_TARGET', '自守 is disabled; the guard cannot protect himself.');
+  }
+  // 连守 reads lastProtected — last night's choice — never tonight's.
+  if (state.config.guardRepeatBan && state.lastProtected === target.seat) {
+    throw new GameError(
+      'INVALID_TARGET',
+      '连守 — the guard cannot protect the same player two nights running.',
+    );
+  }
+  night.protectTarget = target.seat;
+  night.guardTurn = 'done';
+  events.push({ type: 'GUARD_PROTECTED', actor: actor.seat, target: target.seat });
+}
+
+export function handleGuardPass(
+  state: GameState,
+  action: Extract<GameAction, { type: 'GUARD_PASS' }>,
+  events: GameEvent[],
+): void {
+  const night = requireNight(state);
+  if (night.guardTurn !== 'pending') {
+    throw new GameError('NOT_YOUR_TURN', 'It is not the guard’s turn.');
+  }
+  const actor = getPlayer(state, action.actor);
+  if (!actor.alive) throw new GameError('PLAYER_DEAD', 'Dead players cannot act.');
+  if (actor.role !== 'guard') {
+    throw new GameError('NOT_YOUR_TURN', 'Only the guard protects at night.');
+  }
+  if (!state.config.guardEmptyProtect) {
+    throw new GameError('INVALID_TARGET', '空守 is disabled; the guard must protect someone.');
+  }
+  night.guardTurn = 'done';
+  events.push({ type: 'GUARD_PASSED', actor: actor.seat });
 }
 
 export function handleWolfKill(
@@ -34,10 +99,13 @@ export function handleWolfKill(
   if (night.step !== 'wolf') {
     throw new GameError('NOT_YOUR_TURN', 'The wolves have finished acting tonight.');
   }
+  if (night.guardTurn === 'pending') {
+    throw new GameError('NOT_YOUR_TURN', 'The guard has not finished acting tonight.');
+  }
   const actor = getPlayer(state, action.actor);
   if (!actor.alive) throw new GameError('PLAYER_DEAD', 'Dead players cannot act.');
-  if (actor.role !== 'werewolf') {
-    throw new GameError('NOT_YOUR_TURN', 'Only werewolves vote for the night kill.');
+  if (campOf(actor.role) !== 'wolf') {
+    throw new GameError('NOT_YOUR_TURN', 'Only wolves vote for the night kill.');
   }
   if (action.target !== null) {
     requireLivingTarget(state, action.target);
@@ -46,7 +114,7 @@ export function handleWolfKill(
   }
   night.wolfVotes[action.actor] = action.target;
   events.push({ type: 'WOLF_KILL_VOTE', actor: action.actor, target: action.target });
-  const livingWolves = livingPlayers(state).filter((p) => p.role === 'werewolf');
+  const livingWolves = livingPlayers(state).filter((p) => campOf(p.role) === 'wolf');
   if (livingWolves.every((w) => night.wolfVotes[w.seat] !== undefined)) {
     resolveWolfVote(state, night, events);
   }
@@ -172,7 +240,7 @@ export function handleSeerCheck(
   const target = requireLivingTarget(state, action.target);
   const priv = seer.private;
   if (priv.kind !== 'seer') throw new GameError('NOT_YOUR_TURN', 'Seat is not the seer.');
-  const result = target.role === 'werewolf' ? 'wolf' : 'good';
+  const result = campOf(target.role) === 'wolf' ? 'wolf' : 'good';
   priv.checks[action.target] = result;
   events.push({ type: 'SEER_CHECKED', actor: seer.seat, target: action.target, result });
   completeNight(state, events);

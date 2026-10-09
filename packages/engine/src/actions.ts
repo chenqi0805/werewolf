@@ -13,6 +13,10 @@ export type PlayerAction =
   /** Each living wolf votes; unique plurality wins, ties resolve to 空刀.
    *  `null` votes for no kill (空刀). */
   | { type: 'WOLF_KILL'; actor: Seat; target: Seat | null }
+  /** Protects a player from tonight's wolf kill (守卫, wolfking boards). */
+  | { type: 'GUARD_PROTECT'; actor: Seat; target: Seat }
+  /** Declines to protect anyone (空守). */
+  | { type: 'GUARD_PASS'; actor: Seat }
   /** Saves tonight's kill target. */
   | { type: 'WITCH_HEAL'; actor: Seat }
   /** One poison per game; self-poison is never legal. */
@@ -40,6 +44,10 @@ export type PlayerAction =
   | { type: 'HUNTER_SHOOT'; actor: Seat; target: Seat }
   /** Declines the shot. */
   | { type: 'HUNTER_PASS'; actor: Seat }
+  /** 白狼王 self-destructs, taking a player with him (wolfking boards). */
+  | { type: 'WOLF_KING_DESTRUCT'; actor: Seat; target: Seat }
+  /** Declines his destruct window (exile settlement only). */
+  | { type: 'WOLF_KING_PASS'; actor: Seat }
   /** Sheriff sets the daily speech direction. */
   | { type: 'SET_SPEECH_DIRECTION'; actor: Seat; direction: 'cw' | 'ccw' };
 
