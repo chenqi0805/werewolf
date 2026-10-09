@@ -6,7 +6,7 @@ import { Room } from '../room';
  * Fixed standard lineup for deterministic tests.
  * Wolves 1-4, villagers 5-8, seer 9, witch 10, hunter 11, idiot 12.
  */
-export const STANDARD: readonly SeatAssignment[] = [
+export const STANDARD: SeatAssignment[] = [
   { seat: 1, role: 'werewolf' },
   { seat: 2, role: 'werewolf' },
   { seat: 3, role: 'werewolf' },

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { GameEvent, PlayerAction, Seat } from '@werewolf/engine';
+import type { GameAction, GameEvent, Seat } from '@werewolf/engine';
 import { applyAction, createGame } from '@werewolf/engine';
 import { eventsForSeat, viewFor, type PlayerView } from '../view';
 import { ALL_SEATS, STANDARD } from './fixtures';
 
-function apply(state: ReturnType<typeof createGame>, action: PlayerAction) {
+function apply(state: ReturnType<typeof createGame>, action: GameAction) {
   return applyAction(state, action).state;
 }
 

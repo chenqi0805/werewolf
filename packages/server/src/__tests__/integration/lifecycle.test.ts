@@ -47,7 +47,7 @@ describe('room lifecycle over real sockets', () => {
     expect(seats).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(tokens.size).toBe(11);
     // The creator's own ack carries seat 1 and a token of its own.
-    expect(rig.recs[0].latest?.you.seat).toBe(1);
+    expect(rig.recs[0]?.latest?.you.seat).toBe(1);
   }, 10_000);
 
   it('rejects a 13th join with ROOM_FULL and unknown codes with ROOM_NOT_FOUND', async () => {

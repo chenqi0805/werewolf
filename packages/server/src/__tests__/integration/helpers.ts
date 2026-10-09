@@ -167,17 +167,19 @@ export async function playScriptedGame(rig: Rig, timeoutMs = 30_000): Promise<vo
     // a vanished player's rec must never stall the script.
     const active: PlayerView[] = [];
     for (let i = 0; i < rig.clients.length; i++) {
-      if (!rig.clients[i].connected) continue;
-      const view = rig.recs[i].latest;
+      const client = rig.clients[i];
+      if (!client || !client.connected) continue;
+      const view = rig.recs[i]?.latest;
       if (view) active.push(view);
     }
     if (active.length > 0 && active.every((v) => v.phase === 'game-over' && v.winner !== null)) {
       return;
     }
     for (let i = 0; i < rig.clients.length; i++) {
-      if (!rig.clients[i].connected) continue;
-      const view = rig.recs[i].latest;
-      if (view) actOnce(rig.clients[i], view, sent);
+      const client = rig.clients[i];
+      if (!client || !client.connected) continue;
+      const view = rig.recs[i]?.latest;
+      if (view) actOnce(client, view, sent);
     }
     await sleep(5);
   }
@@ -319,6 +321,7 @@ const SERVER_TYPES = new Set([
 export function sweepAllPayloads(rig: Rig): void {
   for (let i = 0; i < rig.recs.length; i++) {
     const rec = rig.recs[i];
+    if (!rec) continue;
     for (const view of rec.views) {
       const over = view.phase === 'game-over';
       const youRole = view.players.find((r) => r.seat === view.you.seat)?.role ?? null;

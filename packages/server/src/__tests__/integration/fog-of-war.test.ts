@@ -73,7 +73,7 @@ describe('fog of war over real sockets', () => {
     }
 
     // Wolves always saw the whole pack in their own views.
-    const wolfSeats = (rig.recs[0].latest?.players ?? [])
+    const wolfSeats = (rig.recs[0]?.latest?.players ?? [])
       .filter((p) => p.role === 'werewolf')
       .map((p) => p.seat);
     for (const rec of rig.recs) {

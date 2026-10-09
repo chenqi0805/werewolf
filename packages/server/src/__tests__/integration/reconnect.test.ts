@@ -60,6 +60,8 @@ describe('reconnect over real sockets', () => {
     // Let defaults carry night 1 and day 1 forward, then drop a player.
     await waitFor(() => rig.recs.some((r) => (r.latest?.dayNumber ?? 0) >= 2), 20_000);
     const victim = clients[5];
+    const victimToken = tokens[5];
+    if (!victim || !victimToken) throw new Error('rig setup: missing client 5 or its token');
     const victimSeat = victim.rec.latest?.you.seat;
     expect(victimSeat).toBeDefined();
     const logLengthBefore = victim.rec.latest?.log.length ?? 0;
@@ -70,7 +72,7 @@ describe('reconnect over real sockets', () => {
     await sleep(300);
 
     const revived = await connect(rig);
-    const ack = await rejoinRoom(revived.client, roomCode, tokens[5]);
+    const ack = await rejoinRoom(revived.client, roomCode, victimToken);
     expect(ack.seat).toBe(victimSeat);
     const view = revived.rec.latest;
     expect(view?.you.seat).toBe(victimSeat);
@@ -88,6 +90,8 @@ describe('reconnect over real sockets', () => {
 
     // Seat 6's socket dies before the game even begins to matter.
     const vanished = clients[5];
+    const vanishedToken = tokens[5];
+    if (!vanished || !vanishedToken) throw new Error('rig setup: missing client 5 or its token');
     const vanishedSeat = vanished.rec.latest?.you.seat;
     vanished.client.disconnect();
 
@@ -101,11 +105,11 @@ describe('reconnect over real sockets', () => {
     }
     // The vanished seat still exists in the final state and the token
     // still reattaches — as a spectator-grade view after game over.
-    const survivorView = active[0].rec.latest;
+    const survivorView = active[0]?.rec.latest;
     expect(survivorView?.players.some((p) => p.seat === vanishedSeat)).toBe(true);
 
     const revived = await connect(rig);
-    const ack = await rejoinRoom(revived.client, roomCode, tokens[5]);
+    const ack = await rejoinRoom(revived.client, roomCode, vanishedToken);
     expect(ack.seat).toBe(vanishedSeat);
     await waitFor(() => revived.rec.latest !== null);
     expect(revived.rec.latest?.phase).toBe('game-over');

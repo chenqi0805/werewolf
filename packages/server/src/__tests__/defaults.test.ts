@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { PlayerAction } from '@werewolf/engine';
+import type { GameAction } from '@werewolf/engine';
 import { clockKey, defaultActionsFor } from '../defaults';
 import { fixedRoom } from './fixtures';
 import * as drv from './drivers';
 
-function types(actions: PlayerAction[]): string[] {
+function types(actions: GameAction[]): string[] {
   return actions.map((a) => a.type);
 }
 
