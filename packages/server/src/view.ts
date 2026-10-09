@@ -62,7 +62,7 @@ export type StepView =
   | { kind: 'speech'; order: Seat[] | null; cursor: number }
   | { kind: 'exile-vote'; electorate: Seat[] }
   | { kind: 'pk-speech'; tied: Seat[]; cursor: number }
-  | { kind: 'pk-vote'; electorate: Seat[] }
+  | { kind: 'pk-vote'; electorate: Seat[]; voteKind: 'sheriff' | 'exile' }
   | { kind: 'hunter-shot'; seat: Seat | null }
   | { kind: 'badge-pass'; seat: Seat | null }
   | { kind: 'game-over' };
@@ -155,7 +155,13 @@ function stepView(state: GameState): StepView {
         cursor: state.pk?.cursor ?? 0,
       };
     case 'pk-vote':
-      return { kind: 'pk-vote', electorate: [...(state.vote?.electorate ?? [])] };
+      // An open election means the PK belongs to the sheriff race; once the
+      // election has resolved (or never happened), a PK vote is the exile's.
+      return {
+        kind: 'pk-vote',
+        electorate: [...(state.vote?.electorate ?? [])],
+        voteKind: state.election !== null ? 'sheriff' : 'exile',
+      };
     case 'hunter-shot':
     case 'badge-pass': {
       const head = state.resolution?.queue[0];
