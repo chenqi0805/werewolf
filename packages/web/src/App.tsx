@@ -84,7 +84,18 @@ export function App(): JSX.Element {
       </main>
     );
   } else if (view.step.kind === 'lobby') {
-    screen = <LobbyScreen view={view} roomCode={roomCode} socket={socket} />;
+    screen = (
+      <LobbyScreen
+        view={view}
+        roomCode={roomCode}
+        socket={socket}
+        onQuit={() => {
+          // The seat is freed server-side; the stale token must not reattach.
+          clearSession(window.localStorage);
+          setRoomCode(null);
+        }}
+      />
+    );
   } else if (view.step.kind === 'game-over') {
     screen = <GameOverScreen view={view} />;
   } else {

@@ -94,6 +94,27 @@ export class Room {
     throw new RoomError('BAD_TOKEN', 'No seat matches this session token.');
   }
 
+  /** Seats currently held by a session — the lobby's true occupancy. */
+  occupiedSeats(): ReadonlySet<Seat> {
+    return new Set(this.seats.keys());
+  }
+
+  /**
+   * Lobby-only quit: frees the seat and kills the token, so the next join
+   * reuses it and the old token cannot reattach. Once the game has started
+   * a seat is gone for good — mid-game disconnects keep their reattach
+   * path, so leave is rejected there.
+   */
+  leave(seat: Seat): void {
+    if (this.hasStarted()) {
+      throw new RoomError('ALREADY_STARTED', 'The game has already started.');
+    }
+    if (!this.seats.has(seat)) {
+      throw new RoomError('NO_SEAT', 'No session holds this seat.');
+    }
+    this.seats.delete(seat);
+  }
+
   /**
    * Starts the game. Any seated player may ask; the room must be full. The
    * START_GAME action is applied here, never accepted from a socket.

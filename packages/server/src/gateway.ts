@@ -59,6 +59,8 @@ export interface ClientToServerEvents {
   'room:join': (code: string, ack: Ack<JoinAck>) => void;
   'room:rejoin': (code: string, token: string, ack: Ack<RejoinAck>) => void;
   'room:start': (ack: Ack<OkAck>) => void;
+  /** Lobby-only quit: frees the seat and kills the session token. */
+  'room:leave': (ack: Ack<OkAck>) => void;
   'game:action': (action: PlayerAction) => void;
   /** Raw mic audio from the current speaker of a speech slot; violations drop. */
   'voice:frame': (chunk: ArrayBuffer) => void;
@@ -166,7 +168,19 @@ export function attachGateway(
   }
 
   function emitView(socket: GatewaySocket, room: Room, seat: Seat | null): void {
-    socket.emit('game:view', viewFor(room.state, seat, deadlines.get(room.code) ?? null));
+    socket.emit(
+      'game:view',
+      viewFor(room.state, seat, deadlines.get(room.code) ?? null, room.occupiedSeats()),
+    );
+  }
+
+  /** Re-renders every lobby after join/leave — no game events, just fresh views. */
+  function broadcastOccupancy(room: Room): void {
+    const sockets = roomSockets.get(room.code);
+    if (!sockets) return;
+    for (const socket of sockets) {
+      emitView(socket, room, socket.data.seat ?? null);
+    }
   }
 
   function broadcast(room: Room, events: readonly GameEvent[]): void {
@@ -280,7 +294,7 @@ export function attachGateway(
       const { seat, sessionToken } = room.join();
       bind(socket, room.code, seat);
       ack({ roomCode: room.code, seat, sessionToken });
-      emitView(socket, room, seat);
+      broadcastOccupancy(room);
     });
 
     socket.on('room:join', (code, ack) => {
@@ -301,7 +315,7 @@ export function attachGateway(
         const { seat, sessionToken } = room.join();
         bind(socket, room.code, seat);
         ack({ roomCode: room.code, seat, sessionToken });
-        emitView(socket, room, seat);
+        broadcastOccupancy(room);
       } catch (error) {
         ack({ error: errorPayload(error).code });
       }
@@ -342,6 +356,27 @@ export function attachGateway(
       } catch (error) {
         ack({ error: errorPayload(error).code });
       }
+    });
+
+    socket.on('room:leave', (ack) => {
+      if (typeof ack !== 'function') return;
+      const { roomCode, seat } = socket.data;
+      const room = roomCode ? registry.get(roomCode) : undefined;
+      if (!room || seat === null) {
+        ack({ error: 'NOT_IN_ROOM' });
+        return;
+      }
+      try {
+        room.leave(seat);
+      } catch (error) {
+        ack({ error: errorPayload(error).code });
+        return;
+      }
+      // The token died with the seat; the socket goes back to the connect
+      // state and stops receiving this room's views.
+      unbind(socket);
+      ack({ ok: true });
+      broadcastOccupancy(room);
     });
 
     socket.on('game:action', (raw) => {

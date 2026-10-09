@@ -29,6 +29,7 @@ export const SELECTORS = {
   roomCode: '.scr-code',
   lobbyCount: '.scr-caption:has-text("人已入座")',
   startButton: 'button:has-text("开始游戏")',
+  quitButton: 'button:has-text("退出房间")',
   seatCaption: '.scr-caption:has-text("你的座位")',
   roleBadge: '.scr-badge',
   gameOver: 'section[aria-label="游戏结束"]',

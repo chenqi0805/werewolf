@@ -238,3 +238,19 @@ describe('viewFor — pk-vote disambiguation', () => {
     expect(view.step).toMatchObject({ kind: 'pk-vote', voteKind: 'sheriff' });
   });
 });
+
+describe('viewFor — lobby occupancy', () => {
+  it('marks rows occupied from the caller-passed seat set', () => {
+    const lobby = createGame(STANDARD);
+    const view = viewFor(lobby, 1, null, new Set([1, 7]));
+    expect(view.players.find((r) => r.seat === 1)?.occupied).toBe(true);
+    expect(view.players.find((r) => r.seat === 7)?.occupied).toBe(true);
+    expect(view.players.find((r) => r.seat === 2)?.occupied).toBe(false);
+  });
+
+  it('treats every dealt seat as occupied when no set is passed', () => {
+    const lobby = createGame(STANDARD);
+    expect(viewFor(lobby, 1).players.every((r) => r.occupied)).toBe(true);
+    expect(viewFor(lobby, null).players.every((r) => r.occupied)).toBe(true);
+  });
+});

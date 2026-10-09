@@ -5,8 +5,10 @@ import type { PlayerView, YouView } from '@werewolf/server';
 import {
   deriveTally,
   logToEntries,
+  occupiedCountOf,
   phaseCaptionOf,
   revealsOf,
+  roomErrorText,
   seerResultsOf,
   seatViewsOf,
   speechByDayOf,
@@ -44,6 +46,7 @@ const row = (seat: number, overrides: Partial<PlayerView['players'][number]> = {
   revealedIdiot: false,
   voteWeight: 1,
   role: null,
+  occupied: true,
   ...overrides,
 });
 
@@ -296,5 +299,44 @@ describe('phaseCaptionOf', () => {
     expect(phaseCaptionOf(view({ phase: 'game-over', step: { kind: 'game-over' } }))).toContain(
       '结束',
     );
+  });
+});
+
+describe('seatViewsOf — lobby occupancy', () => {
+  it('carries row occupancy onto the SeatView', () => {
+    const v = view({
+      players: [row(1, { occupied: true }), row(2, { occupied: false })],
+    });
+    const seats = seatViewsOf(v);
+    expect(seats.find((s) => s.seat === 1)?.occupied).toBe(true);
+    expect(seats.find((s) => s.seat === 2)?.occupied).toBe(false);
+  });
+});
+
+describe('occupiedCountOf', () => {
+  it('counts seats with an occupied session, not merely living rows', () => {
+    const seats = [
+      { seat: 1, name: '1号', alive: true, isSelf: true, isSheriff: false, occupied: true },
+      { seat: 2, name: '2号', alive: true, isSelf: false, isSheriff: false, occupied: false },
+      { seat: 3, name: '3号', alive: true, isSelf: false, isSheriff: false, occupied: true },
+      // Dead and unoccupied are different things; the count only reads occupancy.
+      { seat: 4, name: '4号', alive: false, isSelf: false, isSheriff: false, occupied: false },
+    ];
+    expect(occupiedCountOf(seats)).toBe(2);
+  });
+
+  it('counts zero on an empty lobby', () => {
+    expect(occupiedCountOf([])).toBe(0);
+  });
+});
+
+describe('roomErrorText', () => {
+  it('labels known room error codes in short zh', () => {
+    expect(roomErrorText('ROOM_NOT_FULL')).toBe('人数未满，无法开局');
+    expect(roomErrorText('ALREADY_STARTED')).toBe('对局已经开始');
+  });
+
+  it('passes an unknown code through so nothing is swallowed', () => {
+    expect(roomErrorText('SOME_FUTURE_CODE')).toBe('操作失败（SOME_FUTURE_CODE）');
   });
 });

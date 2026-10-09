@@ -64,6 +64,11 @@ export function startGame(socket: GameSocket): Promise<OkAck> {
   return callAck<OkAck>((ack) => socket.emit('room:start', ack));
 }
 
+/** Lobby-only quit: frees the seat server-side; the caller resets the UI. */
+export function leaveRoom(socket: GameSocket): Promise<OkAck> {
+  return callAck<OkAck>((ack) => socket.emit('room:leave', ack));
+}
+
 /** Ask the strategy assistant; it answers from the caller's own view or acks an error code. */
 export function requestStrategy(socket: GameSocket): Promise<StrategyReply> {
   return callAck<StrategyReply>((ack) => socket.emit('assistant:strategy', ack));

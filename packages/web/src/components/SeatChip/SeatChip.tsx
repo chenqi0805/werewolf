@@ -29,6 +29,7 @@ export function SeatChip({
     interactive && styles.clickable,
     selected && styles.selected,
     !view.alive && styles.dead,
+    view.occupied === false && styles.vacant,
     view.isSpeaking && styles.speaking,
   ]
     .filter(Boolean)
@@ -46,6 +47,7 @@ export function SeatChip({
       ) : view.revealedIdiot ? (
         <span className={styles.idiotTag}>已翻牌</span>
       ) : null}
+      {view.occupied === false ? <span className={styles.vacantTag}>空位</span> : null}
       <span className={styles.seatNumber}>{view.seat}号</span>
       <span className={styles.seatName}>{view.name}</span>
       {showRole && meta ? (
@@ -59,7 +61,7 @@ export function SeatChip({
 
   const label = `${view.seat}号 ${view.name}${view.alive ? '' : '，已出局'}${
     view.isSheriff ? '，警长' : ''
-  }${meta ? `，${meta.label}` : ''}`;
+  }${meta ? `，${meta.label}` : ''}${view.occupied === false ? '，空位' : ''}`;
 
   if (!interactive) {
     return (

@@ -7,6 +7,7 @@ import {
   AckError,
   createRoom,
   joinRoom,
+  leaveRoom,
   rejoinRoom,
   requestStrategy,
   sendAction,
@@ -126,5 +127,24 @@ describe('requestStrategy', () => {
     const error = await requestStrategy(socket).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AckError);
     expect((error as AckError).code).toBe('ASSISTANT_UNAVAILABLE');
+  });
+});
+
+describe('leaveRoom', () => {
+  it('emits room:leave and resolves with the ok ack', async () => {
+    const socket = fakeSocket((_event, args) => {
+      (args[args.length - 1] as (resp: unknown) => void)({ ok: true });
+    });
+    await expect(leaveRoom(socket)).resolves.toEqual({ ok: true });
+    expect(socket.emitted[0]?.event).toBe('room:leave');
+  });
+
+  it('rejects with AckError carrying the server code', async () => {
+    const socket = fakeSocket((_event, args) => {
+      (args[args.length - 1] as (resp: unknown) => void)({ error: 'ALREADY_STARTED' });
+    });
+    const error = await leaveRoom(socket).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AckError);
+    expect((error as AckError).code).toBe('ALREADY_STARTED');
   });
 });
