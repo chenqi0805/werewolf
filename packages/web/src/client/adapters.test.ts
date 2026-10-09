@@ -9,6 +9,7 @@ import {
   revealsOf,
   seerResultsOf,
   seatViewsOf,
+  speechByDayOf,
   speechMessagesOf,
   speakingSeatOf,
   winSideOf,
@@ -140,6 +141,77 @@ describe('speechMessagesOf', () => {
       { id: 'sp-0', seat: 3, name: '3号', text: '过' },
       { id: 'sp-1', seat: 5, name: '5号', text: '我是预言家' },
     ]);
+  });
+});
+
+describe('speechByDayOf', () => {
+  // Sheriff election on day 1, then two full day cycles of speeches.
+  const multiDayLog: GameEvent[] = [
+    { type: 'GAME_STARTED' },
+    { type: 'DAY_BROKE', dayNumber: 1 },
+    { type: 'SPEECH_MADE', seat: 3, text: '竞选发言', context: 'sheriff-speech' },
+    { type: 'SHERIFF_ELECTED', seat: 3 },
+    { type: 'NIGHT_BEGAN', dayNumber: 1 },
+    { type: 'DAY_BROKE', dayNumber: 1 },
+    { type: 'DEATH_ANNOUNCED', seat: 2 },
+    { type: 'SPEECH_MADE', seat: 2, text: '遗言内容', context: 'last-words' },
+    { type: 'SPEECH_MADE', seat: 5, text: '我是预言家', context: 'speech' },
+    { type: 'PLAYER_EXILED', seat: 7 },
+    { type: 'NIGHT_BEGAN', dayNumber: 2 },
+    { type: 'DAY_BROKE', dayNumber: 2 },
+    { type: 'SPEECH_MADE', seat: 9, text: '第二天发言', context: 'speech' },
+    { type: 'SPEECH_MADE', seat: 5, text: 'PK发言', context: 'pk-speech' },
+    { type: 'SPEECH_MADE', seat: 7, text: 'PK对峙', context: 'pk-speech' },
+  ];
+
+  it('attributes speeches to the right day across all four contexts', () => {
+    const groups = speechByDayOf(multiDayLog);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.day).toBe(1);
+    expect(groups[0]?.records.map((r) => [r.context, r.seat, r.day])).toEqual([
+      ['sheriff-speech', 3, 1],
+      ['last-words', 2, 1],
+      ['speech', 5, 1],
+    ]);
+    expect(groups[1]?.day).toBe(2);
+    expect(groups[1]?.records.map((r) => [r.context, r.seat, r.day])).toEqual([
+      ['speech', 9, 2],
+      ['pk-speech', 5, 2],
+      ['pk-speech', 7, 2],
+    ]);
+    expect(groups[1]?.records[0]).toMatchObject({ name: '9号', text: '第二天发言' });
+  });
+
+  it('captures every SPEECH_MADE exactly once, in log order', () => {
+    const flat = speechByDayOf(multiDayLog).flatMap((group) => group.records);
+    expect(flat.map((r) => r.text)).toEqual([
+      '竞选发言',
+      '遗言内容',
+      '我是预言家',
+      '第二天发言',
+      'PK发言',
+      'PK对峙',
+    ]);
+  });
+
+  it('re-pins the day on NIGHT_BEGAN alone, matching logToEntries', () => {
+    const log: GameEvent[] = [
+      { type: 'DAY_BROKE', dayNumber: 1 },
+      { type: 'SPEECH_MADE', seat: 4, text: '第一天发言', context: 'speech' },
+      { type: 'NIGHT_BEGAN', dayNumber: 2 },
+      { type: 'DAY_BROKE', dayNumber: 2 },
+      { type: 'SPEECH_MADE', seat: 4, text: '第二天发言', context: 'speech' },
+    ];
+    const groups = speechByDayOf(log);
+    expect(groups.map((g) => [g.day, g.records[0]?.text])).toEqual([
+      [1, '第一天发言'],
+      [2, '第二天发言'],
+    ]);
+  });
+
+  it('returns no groups for a speechless log', () => {
+    expect(speechByDayOf([])).toEqual([]);
+    expect(speechByDayOf([{ type: 'DAY_BROKE', dayNumber: 1 }])).toEqual([]);
   });
 });
 
