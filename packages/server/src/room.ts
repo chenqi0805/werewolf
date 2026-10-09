@@ -1,4 +1,5 @@
 import type {
+  BoardId,
   GameAction,
   GameEvent,
   GameState,
@@ -11,8 +12,34 @@ import { applyAction, createGame } from '@werewolf/engine';
 import { RoomError } from './errors';
 import { currentSpeechSlot, type SpeechSlot } from './voice';
 import { shuffledDeck } from './deck';
-import { makeRoomCode, makeToken } from './ids';
+import { hashToken, makeRoomCode, makeToken } from './ids';
 import { defaultActionsFor } from './defaults';
+
+/** Where an applied action came from — provenance in the persisted stream. */
+export type ActionSource = 'player' | 'server' | 'timer';
+
+/** A seat as persisted: the token is stored hashed, never raw. */
+export interface SeatTokenHash {
+  seat: Seat;
+  tokenHash: string;
+}
+
+/**
+ * Persistence observers attached to a room by the registry. The Room knows
+ * nothing about storage — hooks are plain synchronous callbacks invoked at
+ * the moment the change is durable in memory. A room without hooks behaves
+ * exactly like v1. Callbacks may throw (a failed store write fails loudly);
+ * the action stream then simply ends at the last recorded action, which is
+ * a consistent older state for replay.
+ */
+export interface RoomHooks {
+  /** The room row must be written (room creation, restore re-attach). */
+  onRoomChanged?: (room: Room) => void;
+  /** One action was applied — append it to the room's action stream. */
+  onAction?: (room: Room, action: GameAction, source: ActionSource) => void;
+  /** The seat map changed (join) — rewrite the room's seat rows. */
+  onSeatsChanged?: (room: Room) => void;
+}
 
 /** One seated identity: the bearer credential that survives a disconnect. */
 export interface SeatRecord {
@@ -34,6 +61,15 @@ export interface RoomOptions {
    * through the Socket.IO gateway, which always deals randomly.
    */
   assignments?: SeatAssignment[];
+  /** Which board to deal and validate against; classic until a picker ships. */
+  boardId?: BoardId;
+  /** Persistence observers; undefined = plain in-memory room. */
+  hooks?: RoomHooks;
+  /**
+   * Restore path: adopt a replayed engine state and pre-seated token hashes
+   * instead of dealing a fresh deck. Hooks still record post-restore play.
+   */
+  restored?: { state: GameState; seats: ReadonlyMap<Seat, string> };
 }
 
 /**
@@ -44,15 +80,28 @@ export interface RoomOptions {
 export class Room {
   readonly code: string;
 
+  /** seat → sha256(session token) — the hash is also the persisted form. */
   private readonly seats = new Map<Seat, string>();
 
   private currentState: GameState;
 
+  private readonly hooks?: RoomHooks;
+
   constructor(opts: RoomOptions) {
     this.code = opts.code;
-    // createGame validates the standard lineup; with a random deal this
-    // cannot throw, and a fixed test deck fails fast here.
-    this.currentState = createGame(opts.assignments ?? shuffledDeck());
+    this.hooks = opts.hooks;
+    if (opts.restored) {
+      this.currentState = opts.restored.state;
+      for (const [seat, tokenHash] of opts.restored.seats) {
+        this.seats.set(seat, tokenHash);
+      }
+    } else {
+      const boardId = opts.boardId ?? 'classic';
+      // createGame validates the board lineup; with a random deal this
+      // cannot throw, and a fixed test deck fails fast here.
+      this.currentState = createGame(opts.assignments ?? shuffledDeck(boardId), boardId);
+    }
+    this.hooks?.onRoomChanged?.(this);
   }
 
   get state(): GameState {
@@ -82,14 +131,17 @@ export class Room {
     }
     const seat = this.firstFreeSeat();
     const sessionToken = makeToken();
-    this.seats.set(seat, sessionToken);
+    this.seats.set(seat, hashToken(sessionToken));
+    this.hooks?.onSeatsChanged?.(this);
     return { seat, sessionToken };
   }
 
-  /** Seat for a bearer token — the reconnect path. */
+  /** Seat for a bearer token — the reconnect path. The token is hashed and
+   * matched against the seat map, whose entries are hashes at rest. */
   reattach(token: string): Seat {
+    const hash = hashToken(token);
     for (const [seat, known] of this.seats) {
-      if (known === token) return seat;
+      if (known === hash) return seat;
     }
     throw new RoomError('BAD_TOKEN', 'No seat matches this session token.');
   }
@@ -103,7 +155,8 @@ export class Room {
    * Lobby-only quit: frees the seat and kills the token, so the next join
    * reuses it and the old token cannot reattach. Once the game has started
    * a seat is gone for good — mid-game disconnects keep their reattach
-   * path, so leave is rejected there.
+   * path, so leave is rejected there. The seats-changed hook fires so a
+   * persisted room cannot resurrect the quit seat on restore.
    */
   leave(seat: Seat): void {
     if (this.hasStarted()) {
@@ -113,6 +166,14 @@ export class Room {
       throw new RoomError('NO_SEAT', 'No session holds this seat.');
     }
     this.seats.delete(seat);
+    this.hooks?.onSeatsChanged?.(this);
+  }
+
+  /** Seat hashes as persisted — raw tokens never outlive the join ack. */
+  seatTokenHashes(): SeatTokenHash[] {
+    return [...this.seats]
+      .map(([seat, tokenHash]) => ({ seat, tokenHash }))
+      .sort((a, b) => a.seat - b.seat);
   }
 
   /**
@@ -126,17 +187,17 @@ export class Room {
     if (this.hasStarted()) {
       throw new RoomError('ALREADY_STARTED', 'The game has already started.');
     }
-    return this.apply({ type: 'START_GAME' });
+    return this.apply({ type: 'START_GAME' }, 'server');
   }
 
   /** Applies a player action that passed gateway checks (seat, shape). */
   applyPlayerAction(action: PlayerAction): Applied {
-    return this.apply(action);
+    return this.apply(action, 'player');
   }
 
   /** Server pacing step — closing signup, ending a speech slot, and so on. */
   proceed(): Applied {
-    return this.apply({ type: 'PROCEED' });
+    return this.apply({ type: 'PROCEED' }, 'server');
   }
 
   /**
@@ -160,16 +221,16 @@ export class Room {
     if (actions.length === 0) return null;
     const events: GameEvent[] = [];
     for (const action of actions) {
-      const result = applyAction(this.currentState, action);
-      this.currentState = result.state;
+      const result = this.apply(action, 'timer');
       events.push(...result.events);
     }
     return { state: this.currentState, events };
   }
 
-  private apply(action: GameAction): Applied {
+  private apply(action: GameAction, source: ActionSource): Applied {
     const result = applyAction(this.currentState, action);
     this.currentState = result.state;
+    this.hooks?.onAction?.(this, action, source);
     return result;
   }
 
@@ -185,13 +246,43 @@ export class Room {
 export class RoomRegistry {
   private readonly rooms = new Map<string, Room>();
 
-  create(): Room {
-    const room = new Room({ code: makeRoomCode(new Set(this.rooms.keys())) });
-    this.rooms.set(room.code, room);
+  /** Codes that must never be minted again (quarantined restores). */
+  private readonly reservedCodes = new Set<string>();
+
+  /**
+   * Hook factory consulted at room construction; persistence attaches one
+   * keyed by the room's code. Undefined = no persistence. Readable so the
+   * restore path can hand replayed rooms the same hooks.
+   */
+  constructor(public readonly hooksFor?: (code: string) => RoomHooks | undefined) {}
+
+  create(boardId: BoardId = 'classic'): Room {
+    const code = makeRoomCode(this.takenCodes());
+    const room = new Room({ code, boardId, hooks: this.hooksFor?.(code) });
+    this.rooms.set(code, room);
     return room;
   }
 
   get(code: string): Room | undefined {
     return this.rooms.get(code);
+  }
+
+  /** Adopt a fully replayed room (persistence restore path). */
+  restore(room: Room): void {
+    this.rooms.set(room.code, room);
+  }
+
+  /**
+   * A code that exists on disk but is not playable (quarantined replay) must
+   * never be minted: a fresh room colliding with the stale row would fail
+   * its first persist. Live restored rooms join the taken set by simply
+   * being in the registry.
+   */
+  reserveCode(code: string): void {
+    this.reservedCodes.add(code);
+  }
+
+  private takenCodes(): Set<string> {
+    return new Set([...this.rooms.keys(), ...this.reservedCodes]);
   }
 }

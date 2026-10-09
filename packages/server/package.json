@@ -12,6 +12,7 @@
     "start": "tsx src/start.ts"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.19.1",
     "socket.io-client": "^4.8.4",
     "tsx": "^4.23.15",
@@ -19,6 +20,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
     "socket.io": "^4.8.4"
   }
 }

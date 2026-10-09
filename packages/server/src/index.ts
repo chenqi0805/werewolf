@@ -6,10 +6,35 @@
  * applyAction, and every client payload is a projection built here. The
  * PlayerAction protocol is the seam phase-two AI bots plug into.
  */
-export { Room, RoomRegistry, type Applied, type RoomOptions, type SeatRecord } from './room';
+export {
+  Room,
+  RoomRegistry,
+  type Applied,
+  type RoomOptions,
+  type SeatRecord,
+  type ActionSource,
+  type RoomHooks,
+  type SeatTokenHash,
+} from './room';
 export { RoomError, type RoomErrorCode } from './errors';
 export { shuffledDeck } from './deck';
-export { makeRoomCode, makeToken } from './ids';
+export { makeRoomCode, makeToken, hashToken } from './ids';
+export {
+  EventStore,
+  type RoomStatus,
+  type SeatKind,
+  type RoomRowRaw,
+  type ActionRowRaw,
+  type SeatRowRaw,
+  type TimerRowRaw,
+} from './eventStore';
+export {
+  restoreRooms,
+  storeHooksFor,
+  roomStatusOf,
+  roomAssignmentsOf,
+  type RestoreSummary,
+} from './persistence';
 export { defaultActionsFor, clockKey, DEFAULT_TIMERS } from './defaults';
 export {
   viewFor,

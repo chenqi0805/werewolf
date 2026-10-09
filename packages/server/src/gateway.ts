@@ -6,6 +6,8 @@ import { RoomError } from './errors';
 import { RoomRegistry, type Room } from './room';
 import { clockKey, DEFAULT_TIMERS } from './defaults';
 import { eventsForSeat, viewFor, type PlayerView, type TimerInfo } from './view';
+import { EventStore, type TimerRowRaw } from './eventStore';
+import { restoreRooms, storeHooksFor } from './persistence';
 import { attachAssistant, type AssistantOptions, type StrategyReply } from './assistant';
 import { attachPostgame, type PostgameOptions, type PostgameReply } from './postgame';
 import {
@@ -117,13 +119,15 @@ export interface GatewayOptions {
  * Wires the room world onto a Socket.IO server. Every socket holds at most
  * one room binding; fan-out is strictly per-socket (views differ per seat,
  * and events are visibility-filtered), so there is never a raw-state
- * broadcast. Returns a dispose that clears all room timers.
+ * broadcast. Returns a dispose that clears all room timers, plus the restore
+ * re-arm hook used at boot when a store is attached.
  */
 export function attachGateway(
   io: GatewayServer,
   registry: RoomRegistry,
   opts?: GatewayOptions,
-): () => void {
+  store?: EventStore,
+): { dispose(): void; rearmRestored(room: Room, timer: TimerRowRaw | null): void } {
   const timers: Record<string, number> = { ...DEFAULT_TIMERS, ...opts?.timers };
   const roomSockets = new Map<string, Set<GatewaySocket>>();
   const roomTimers = new Map<string, NodeJS.Timeout>();
@@ -209,19 +213,53 @@ export function attachGateway(
     const key = clockKey(room.state);
     if (key === null) {
       deadlines.delete(room.code);
+      store?.clearTimer(room.code);
       return;
     }
     const ms = timers[key];
     if (ms === undefined) {
       deadlines.delete(room.code);
+      store?.clearTimer(room.code);
       return;
     }
-    deadlines.set(room.code, { key, endsAt: Date.now() + ms });
-    const timer = setTimeout(() => {
-      roomTimers.delete(room.code);
-      void expireRoom(room);
-    }, ms);
+    scheduleTimer(room, key, Date.now() + ms);
+  }
+
+  /**
+   * Shared scheduling core: sets the advertised deadline and books the
+   * expiry. `endsAt` is absolute so a restored clock keeps its original
+   * deadline. Every arm persists its re-arm data — the room_timers row is
+   * what restore reads back.
+   */
+  function scheduleTimer(room: Room, key: string, endsAt: number): void {
+    deadlines.set(room.code, { key, endsAt });
+    const timer = setTimeout(
+      () => {
+        roomTimers.delete(room.code);
+        void expireRoom(room);
+      },
+      Math.max(0, endsAt - Date.now()),
+    );
     roomTimers.set(room.code, timer);
+    store?.upsertTimer(room.code, key, endsAt);
+  }
+
+  /**
+   * Restore path: re-arm a restored room's clock from its persisted
+   * deadline. The absolute endsAt survives the restart, so clients see the
+   * same countdown across it. A deadline already in the past schedules at
+   * delay zero and resolves on the next tick — the same semantics as an
+   * expiry that fired mid-downtime. A missing or stale row (its key no
+   * longer matches the replayed state) falls back to a fresh full clock.
+   */
+  function rearmRestored(room: Room, timer: TimerRowRaw | null): void {
+    const key = clockKey(room.state);
+    if (key === null) return;
+    if (timer !== null && timer.timerKey === key) {
+      scheduleTimer(room, timer.timerKey, timer.endsAt);
+      return;
+    }
+    armTimer(room);
   }
 
   /** Shared expiry step: the phase's default actions, applied and broadcast. */
@@ -430,11 +468,14 @@ export function attachGateway(
     });
   });
 
-  return () => {
-    for (const timer of roomTimers.values()) clearTimeout(timer);
-    roomTimers.clear();
-    deadlines.clear();
-    voiceHub.dropAll();
+  return {
+    dispose: () => {
+      for (const timer of roomTimers.values()) clearTimeout(timer);
+      roomTimers.clear();
+      deadlines.clear();
+      voiceHub.dropAll();
+    },
+    rearmRestored,
   };
 }
 
@@ -465,23 +506,33 @@ export interface AppHandle {
  * Full app: HTTP server + Socket.IO gateway over a fresh room registry.
  * Pass an httpServer to share an existing listener; otherwise one is created
  * unbound (call `listen` yourself — tests use port 0).
+ *
+ * Pass a dbPath to open the SQLite event store: every room mutation is
+ * recorded synchronously and everything persisted is restored on boot —
+ * rooms, seat tokens, speeches, votes, and running clocks survive restarts.
+ * Without a dbPath the registry is in-memory (v1 behavior).
  */
-export function createApp(opts?: GatewayOptions & { httpServer?: HttpServer }): AppHandle {
+export function createApp(
+  opts?: GatewayOptions & { httpServer?: HttpServer; dbPath?: string },
+): AppHandle {
   const httpServer = opts?.httpServer ?? createServer();
   const io: GatewayServer = new Server(httpServer, {
     cors: { origin: true, credentials: true },
   });
-  const registry = new RoomRegistry();
-  const dispose = attachGateway(io, registry, opts);
+  const store = opts?.dbPath !== undefined ? new EventStore(opts.dbPath) : undefined;
+  const registry = new RoomRegistry(store ? storeHooksFor(store) : undefined);
+  const gateway = attachGateway(io, registry, opts, store);
+  if (store) restoreRooms(store, registry, gateway.rearmRestored);
   return {
     io,
     registry,
     httpServer,
     async close() {
-      dispose();
+      gateway.dispose();
       await new Promise<void>((resolve) => io.close(() => resolve()));
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
       httpServer.closeAllConnections?.();
+      store?.close();
     },
   };
 }
