@@ -4,6 +4,7 @@ import type { PlayerView, StepView, YouView } from '@werewolf/server';
 import type {
   LogEntry,
   LogKind,
+  PlayerPostgameStat,
   PlayerReveal,
   SeatView,
   SeerResult,
@@ -295,6 +296,99 @@ export function revealsOf(view: PlayerView): PlayerReveal[] {
 
 export function winSideOf(view: PlayerView): 'wolves' | 'good' {
   return view.winner ?? 'good';
+}
+
+/** Public death markers the client log carries — exact causes (刀 vs 毒) live in server-only events. */
+type PublicDeathCause = 'night' | 'exile' | 'shot' | 'destruct' | 'self-destruct';
+
+function deathTextOf(death: { day: number; cause: PublicDeathCause }): string {
+  const { cause, day } = death;
+  switch (cause) {
+    case 'night':
+      return day === 1 ? '首夜出局' : `第${day}夜出局`;
+    case 'exile':
+      return `第${day}天放逐`;
+    case 'shot':
+      return `第${day}天被枪带走`;
+    case 'destruct':
+      return `第${day}天被自爆带走`;
+    case 'self-destruct':
+      return `第${day}天自爆出局`;
+  }
+}
+
+/**
+ * The deterministic per-seat 复盘 stats, walked once off the view's log plus
+ * the game-over reveal rows. The client log never carries server-only events
+ * (individual ballots, exact night-death causes), so this states only what
+ * the table saw: votes received come from the public tallies, votes cast
+ * stay 0, and night deaths read 出局 rather than claiming a cause.
+ */
+export function postgameStatsOf(view: PlayerView): PlayerPostgameStat[] {
+  const stats = new Map<Seat, PlayerPostgameStat>();
+  for (const row of view.players) {
+    if (row.role === null) continue;
+    stats.set(row.seat, {
+      seat: row.seat,
+      name: seatLabel(row.seat),
+      role: row.role,
+      speeches: 0,
+      speechChars: 0,
+      daysSurvived: view.dayNumber,
+      votesCast: 0,
+      votesReceived: 0,
+      death: null,
+    });
+  }
+  let day = 1;
+  const deaths = new Map<Seat, { day: number; cause: PublicDeathCause }>();
+  for (const event of view.log) {
+    if (event.type === 'NIGHT_BEGAN' || event.type === 'DAY_BROKE') {
+      day = event.dayNumber;
+      continue;
+    }
+    switch (event.type) {
+      case 'SPEECH_MADE': {
+        const stat = stats.get(event.seat);
+        if (stat) {
+          stat.speeches += 1;
+          stat.speechChars += event.text.length;
+        }
+        break;
+      }
+      case 'DEATH_ANNOUNCED':
+        if (!deaths.has(event.seat)) deaths.set(event.seat, { day, cause: 'night' });
+        break;
+      case 'PLAYER_EXILED':
+        if (!deaths.has(event.seat)) deaths.set(event.seat, { day, cause: 'exile' });
+        break;
+      case 'HUNTER_SHOT':
+        if (!deaths.has(event.target)) deaths.set(event.target, { day, cause: 'shot' });
+        break;
+      case 'WHITE_WOLF_KING_DESTRUCTED':
+        if (!deaths.has(event.actor)) deaths.set(event.actor, { day, cause: 'self-destruct' });
+        if (!deaths.has(event.target)) deaths.set(event.target, { day, cause: 'destruct' });
+        break;
+      case 'VOTE_TALLY': {
+        if (event.kind !== 'exile') break;
+        for (const count of event.counts) {
+          if (count.seat === null) continue;
+          const stat = stats.get(count.seat);
+          if (stat) stat.votesReceived += count.votes;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  for (const [seat, death] of deaths) {
+    const stat = stats.get(seat);
+    if (!stat) continue;
+    stat.death = deathTextOf(death);
+    stat.daysSurvived = Math.max(death.day - 1, 0);
+  }
+  return [...stats.values()].sort((a, b) => a.seat - b.seat);
 }
 
 const STEP_CAPTIONS: Record<StepView['kind'], string> = {

@@ -5,6 +5,7 @@ import type {
   CreateAck,
   JoinAck,
   OkAck,
+  PostgameReply,
   RejoinAck,
   ServerToClientEvents,
   StrategyReply,
@@ -72,6 +73,14 @@ export function leaveRoom(socket: GameSocket): Promise<OkAck> {
 /** Ask the strategy assistant; it answers from the caller's own view or acks an error code. */
 export function requestStrategy(socket: GameSocket): Promise<StrategyReply> {
   return callAck<StrategyReply>((ack) => socket.emit('assistant:strategy', ack));
+}
+
+/**
+ * Ask for the finished room's shared 复盘; the server memoizes one
+ * generation per room, so repeat and concurrent calls join the same answer.
+ */
+export function requestPostgameAnalysis(socket: GameSocket): Promise<PostgameReply> {
+  return callAck<PostgameReply>((ack) => socket.emit('postgame:analysis', ack));
 }
 
 /** Fire-and-forget: rejections arrive as `game:error`, not as an ack. */

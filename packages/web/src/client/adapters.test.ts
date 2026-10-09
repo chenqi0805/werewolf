@@ -7,6 +7,7 @@ import {
   logToEntries,
   occupiedCountOf,
   phaseCaptionOf,
+  postgameStatsOf,
   revealsOf,
   roomErrorText,
   seerResultsOf,
@@ -338,5 +339,134 @@ describe('roomErrorText', () => {
 
   it('passes an unknown code through so nothing is swallowed', () => {
     expect(roomErrorText('SOME_FUTURE_CODE')).toBe('操作失败（SOME_FUTURE_CODE）');
+  });
+});
+
+describe('postgameStatsOf', () => {
+  // A finished two-day game's client-visible log: election day, two night
+  // deaths, an exile, a hunter shot, and public tallies. Server-only events
+  // (DEATH_RESOLVED, *_VOTE_CAST) never appear in a PlayerView log.
+  const finishedLog: GameEvent[] = [
+    { type: 'GAME_STARTED' },
+    { type: 'DAY_BROKE', dayNumber: 1 },
+    { type: 'SPEECH_MADE', seat: 3, text: '竞选警长发言', context: 'sheriff-speech' },
+    {
+      type: 'VOTE_TALLY',
+      kind: 'sheriff',
+      counts: [{ seat: 3, votes: 8 }],
+    },
+    { type: 'SHERIFF_ELECTED', seat: 3 },
+    { type: 'NIGHT_BEGAN', dayNumber: 1 },
+    { type: 'DAY_BROKE', dayNumber: 1 },
+    { type: 'DEATH_ANNOUNCED', seat: 2 },
+    { type: 'SPEECH_MADE', seat: 2, text: '遗言内容', context: 'last-words' },
+    {
+      type: 'VOTE_TALLY',
+      kind: 'exile',
+      counts: [
+        { seat: 7, votes: 5 },
+        { seat: 11, votes: 1.5 },
+        { seat: null, votes: 3 },
+      ],
+    },
+    { type: 'PLAYER_EXILED', seat: 7 },
+    { type: 'HUNTER_SHOT', shooter: 7, target: 10 },
+    { type: 'NIGHT_BEGAN', dayNumber: 2 },
+    { type: 'DAY_BROKE', dayNumber: 2 },
+    { type: 'DEATH_ANNOUNCED', seat: 12 },
+    { type: 'SPEECH_MADE', seat: 5, text: '第一天预言家发言', context: 'speech' },
+    { type: 'SPEECH_MADE', seat: 5, text: '第二天预言家发言', context: 'speech' },
+    {
+      type: 'VOTE_TALLY',
+      kind: 'exile',
+      counts: [
+        { seat: 6, votes: 4 },
+        { seat: 7, votes: 2 },
+      ],
+    },
+    { type: 'PLAYER_EXILED', seat: 6 },
+    { type: 'GAME_OVER', winner: 'good' },
+  ];
+
+  const finishedView = view({
+    phase: 'game-over',
+    dayNumber: 2,
+    winner: 'good',
+    step: { kind: 'game-over' },
+    log: finishedLog,
+    players: [
+      row(2, { alive: false, role: 'villager' }),
+      row(3, { role: 'seer', hasBadge: true }),
+      row(5, { role: 'witch' }),
+      row(6, { alive: false, role: 'werewolf' }),
+      row(7, { alive: false, role: 'werewolf' }),
+      row(10, { alive: false, role: 'hunter' }),
+      row(11, { role: 'villager' }),
+      row(12, { alive: false, role: 'werewolf' }),
+    ],
+  });
+
+  it('counts speeches and chars per seat, last words included', () => {
+    expect(postgameStatsOf(finishedView).find((s) => s.seat === 3)).toMatchObject({
+      name: '3号',
+      role: 'seer',
+      speeches: 1,
+      speechChars: 6,
+    });
+    expect(postgameStatsOf(finishedView).find((s) => s.seat === 5)).toMatchObject({
+      speeches: 2,
+      speechChars: 16,
+    });
+    expect(postgameStatsOf(finishedView).find((s) => s.seat === 2)).toMatchObject({
+      speeches: 1,
+      speechChars: 4,
+    });
+  });
+
+  it('sums weighted exile votes across tallies, ignoring abstentions and sheriff tallies', () => {
+    const bySeat = new Map(postgameStatsOf(finishedView).map((s) => [s.seat, s]));
+    expect(bySeat.get(7)).toMatchObject({ votesReceived: 7 }); // 5 + 2 across two tallies
+    expect(bySeat.get(6)).toMatchObject({ votesReceived: 4 });
+    expect(bySeat.get(11)).toMatchObject({ votesReceived: 1.5 }); // the sheriff's weighted vote
+    expect(bySeat.get(3)).toMatchObject({ votesReceived: 0 }); // sheriff-kind tally ignored
+  });
+
+  it('attributes each death to its day with a public-record fate line', () => {
+    const bySeat = new Map(postgameStatsOf(finishedView).map((s) => [s.seat, s]));
+    expect(bySeat.get(2)).toMatchObject({ death: '首夜出局', daysSurvived: 0 });
+    expect(bySeat.get(7)).toMatchObject({ death: '第1天放逐', daysSurvived: 0 });
+    expect(bySeat.get(10)).toMatchObject({ death: '第1天被枪带走', daysSurvived: 0 });
+    expect(bySeat.get(12)).toMatchObject({ death: '第2夜出局', daysSurvived: 1 });
+    expect(bySeat.get(6)).toMatchObject({ death: '第2天放逐', daysSurvived: 1 });
+  });
+
+  it('leaves survivors unstamped and alive through the final day', () => {
+    const bySeat = new Map(postgameStatsOf(finishedView).map((s) => [s.seat, s]));
+    expect(bySeat.get(3)).toMatchObject({ death: null, daysSurvived: 2 });
+    expect(bySeat.get(11)).toMatchObject({ death: null, daysSurvived: 2 });
+  });
+
+  it('splits the 白狼王 destruct into self-destruct and taken-target fates', () => {
+    const destructLog: GameEvent[] = [
+      { type: 'NIGHT_BEGAN', dayNumber: 2 },
+      { type: 'DAY_BROKE', dayNumber: 2 },
+      { type: 'WHITE_WOLF_KING_DESTRUCTED', actor: 9, target: 4 },
+    ];
+    const destructView = view({
+      phase: 'game-over',
+      dayNumber: 2,
+      log: destructLog,
+      players: [
+        row(4, { alive: false, role: 'witch' }),
+        row(9, { alive: false, role: 'werewolf' }),
+      ],
+    });
+    const bySeat = new Map(postgameStatsOf(destructView).map((s) => [s.seat, s]));
+    expect(bySeat.get(9)).toMatchObject({ death: '第2天自爆出局', daysSurvived: 1 });
+    expect(bySeat.get(4)).toMatchObject({ death: '第2天被自爆带走', daysSurvived: 1 });
+  });
+
+  it('reports no stats for rows without a revealed role', () => {
+    expect(postgameStatsOf(view({ players: [row(3), row(5)] }))).toEqual([]);
   });
 });
