@@ -23,6 +23,8 @@ import {
   handleSetSpeechDirection,
   handleSheriffPass,
   handleSpeak,
+  handleWolfKingDestruct,
+  handleWolfKingPass,
 } from './day';
 import { deepClone, type GameState } from './state';
 import {
@@ -117,6 +119,12 @@ function route(state: GameState, action: GameAction, events: GameEvent[]): void 
       return;
     case 'HUNTER_PASS':
       handleHunterPass(state, action, events);
+      return;
+    case 'WOLF_KING_DESTRUCT':
+      handleWolfKingDestruct(state, action, events);
+      return;
+    case 'WOLF_KING_PASS':
+      handleWolfKingPass(state, action, events);
       return;
     case 'SET_SPEECH_DIRECTION':
       handleSetSpeechDirection(state, action, events);

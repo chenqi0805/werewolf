@@ -6,7 +6,11 @@ import { GameError } from './errors';
 import type { Phase, PlayerState, Role, Seat } from './types';
 import { SEAT_COUNT } from './types';
 
-export type DeathCause = 'wolf-kill' | 'poison' | 'exile' | 'shot';
+/**
+ * How a player died. Causes feed interrupt eligibility (hunter/destruct
+ * windows) and dawn announcements; only server events carry a cause.
+ */
+export type DeathCause = 'wolf-kill' | 'poison' | 'exile' | 'shot' | 'self-destruct';
 
 /**
  * One resolved death and the interrupts it may still owe. The engine drains
@@ -18,6 +22,13 @@ export interface DeathRecord {
   cause: DeathCause;
   hunterWindow: boolean;
   hunterWindowDone: boolean;
+  /**
+   * The dying 白狼王 may take a player with him — his own exile settlement
+   * only: poison and the night kill silence the skill. The mid-speech
+   * destruct is a player action, not a death window, so it never sets this.
+   */
+  destructWindow: boolean;
+  destructWindowDone: boolean;
   badgePass: boolean;
   badgeDone: boolean;
   lastWordsEligible: boolean;

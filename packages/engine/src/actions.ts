@@ -44,6 +44,10 @@ export type PlayerAction =
   | { type: 'HUNTER_SHOOT'; actor: Seat; target: Seat }
   /** Declines the shot. */
   | { type: 'HUNTER_PASS'; actor: Seat }
+  /** 白狼王 self-destructs, taking a player with him (wolfking boards). */
+  | { type: 'WOLF_KING_DESTRUCT'; actor: Seat; target: Seat }
+  /** Declines his destruct window (exile settlement only). */
+  | { type: 'WOLF_KING_PASS'; actor: Seat }
   /** Sheriff sets the daily speech direction. */
   | { type: 'SET_SPEECH_DIRECTION'; actor: Seat; direction: 'cw' | 'ccw' };
 

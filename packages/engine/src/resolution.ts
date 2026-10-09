@@ -50,6 +50,7 @@ export function applyDeath(
   if (!p.alive) throw new GameError('PLAYER_DEAD', `Seat ${seat} is already dead.`);
   p.alive = false;
   const shotUsed = p.private.kind === 'hunter' ? p.private.shotUsed : false;
+  const destructUsed = p.private.kind === 'white_wolf_king' ? p.private.destructUsed : false;
   const record: DeathRecord = {
     seat,
     cause,
@@ -58,12 +59,18 @@ export function applyDeath(
       !shotUsed &&
       (cause !== 'poison' || !state.config.poisonSilencesHunter),
     hunterWindowDone: false,
+    // The 白狼王's death window opens only on his own exile settlement —
+    // poison and the night kill silence the skill entirely.
+    destructWindow: p.role === 'white_wolf_king' && cause === 'exile' && !destructUsed,
+    destructWindowDone: false,
     badgePass: p.hasBadge,
     badgeDone: false,
     lastWordsEligible:
-      state.config.nightDeathLastWords === 'night1-only' &&
-      state.dayNumber === 1 &&
-      (cause === 'wolf-kill' || cause === 'poison'),
+      (state.config.nightDeathLastWords === 'night1-only' &&
+        state.dayNumber === 1 &&
+        (cause === 'wolf-kill' || cause === 'poison')) ||
+      // House-rule knob: destruct casualties may earn last words.
+      (cause === 'self-destruct' && state.config.destructLastWords),
     announced: false,
   };
   events.push({ type: 'DEATH_RESOLVED', seat, cause });
@@ -90,6 +97,10 @@ export function drainResolution(state: GameState, events: GameEvent[]): void {
     if (!head) break;
     if (head.badgePass && !head.badgeDone) {
       state.phase = 'badge-pass';
+      return;
+    }
+    if (head.destructWindow && !head.destructWindowDone) {
+      state.phase = 'hunter-shot';
       return;
     }
     if (head.hunterWindow && !head.hunterWindowDone) {

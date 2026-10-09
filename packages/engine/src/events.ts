@@ -57,6 +57,9 @@ export type GameEvent =
   | { type: 'IDIOT_REVEALED'; seat: Seat }
   /** A vote landed on the revealed idiot — nobody is removed. */
   | { type: 'EXILE_BLOCKED_BY_IDIOT'; seat: Seat }
+  /** Public: the 白狼王 reveals and self-destructs, taking his target. */
+  | { type: 'WHITE_WOLF_KING_DESTRUCTED'; actor: Seat; target: Seat }
+  | { type: 'WOLF_KING_PASSED'; actor: Seat }
   /** Public: shooting reveals the hunter. */
   | { type: 'HUNTER_SHOT'; shooter: Seat; target: Seat }
   | { type: 'HUNTER_PASSED'; shooter: Seat }

@@ -9,20 +9,23 @@ import { SEAT_COUNT } from './types';
  * Creates the initial state for the classic board with full config (the v1
  * call shape the server and the existing suites use).
  */
-export function createGame(assignments: SeatAssignment[], config?: EngineConfig): GameState;
+export function createGame(
+  assignments: SeatAssignment[],
+  config?: Partial<EngineConfig>,
+): GameState;
 /** Creates the initial state for a named board, merged with per-knob overrides. */
 export function createGame(
   assignments: SeatAssignment[],
   board: BoardId,
-  config?: EngineConfig,
+  config?: Partial<EngineConfig>,
 ): GameState;
 export function createGame(
   assignments: SeatAssignment[],
-  boardOrConfig: BoardId | EngineConfig = 'classic',
-  config?: EngineConfig,
+  boardOrConfig: BoardId | Partial<EngineConfig> = 'classic',
+  config?: Partial<EngineConfig>,
 ): GameState {
   const boardId: BoardId = typeof boardOrConfig === 'string' ? boardOrConfig : 'classic';
-  const overrides: EngineConfig | undefined =
+  const overrides: Partial<EngineConfig> | undefined =
     typeof boardOrConfig === 'string' ? config : boardOrConfig;
   const board = BOARDS[boardId];
   // A full config argument behaves exactly like v1 (it replaces the board

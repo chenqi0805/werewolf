@@ -24,7 +24,7 @@ export const WOLF_KING_STANDARD: SeatAssignment[] = [
   { seat: 12, role: 'guard' },
 ];
 
-export function newWolfKingGame(config?: EngineConfig): GameState {
+export function newWolfKingGame(config?: Partial<EngineConfig>): GameState {
   return createGame(WOLF_KING_STANDARD, 'wolfking', config);
 }
 
