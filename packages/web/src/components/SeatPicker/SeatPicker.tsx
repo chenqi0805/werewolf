@@ -7,7 +7,7 @@ import styles from './SeatPicker.module.css';
 export interface SeatPickerProps {
   /** Candidate seats in display order; already filtered by the composition layer. */
   options: SeatView[];
-  selected: Seat | null;
+  selected?: Seat | null;
   onSelect: (seat: Seat) => void;
   disabled?: boolean;
 }
@@ -15,7 +15,7 @@ export interface SeatPickerProps {
 /** Compact wrapped grid of clickable seat chips for targeting decisions. */
 export function SeatPicker({
   options,
-  selected,
+  selected = null,
   onSelect,
   disabled = false,
 }: SeatPickerProps): JSX.Element {
