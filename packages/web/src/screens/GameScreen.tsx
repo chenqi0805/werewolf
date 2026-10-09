@@ -1,4 +1,5 @@
 import type { PlayerView } from '@werewolf/server';
+import { useState } from 'react';
 import type { JSX } from 'react';
 import type { PlayerAction, Seat } from '@werewolf/engine';
 
@@ -40,6 +41,7 @@ import {
   voteContextOf,
 } from './gating';
 import { Countdown } from './Countdown';
+import { TutorialScreen } from './TutorialScreen';
 
 interface GameScreenProps {
   view: PlayerView;
@@ -67,6 +69,7 @@ export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Eleme
   const speechGroups = speechByDayOf(view.log);
   const { you } = view;
   const step = view.step;
+  const [showTutorial, setShowTutorial] = useState(false);
 
   if (you.seat === null) {
     return (
@@ -113,6 +116,9 @@ export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Eleme
             <Countdown timer={view.timer} />
           </div>
           <div className="scr-row">
+            <button type="button" onClick={() => setShowTutorial(true)}>
+              玩法教程
+            </button>
             <span className="scr-caption">你的座位 {seat} 号</span>
             {meta !== null && <span className="scr-badge">{meta.label}</span>}
             {you.hasBadge && <span className="scr-badge scr-badge--badge">警长</span>}
@@ -261,6 +267,8 @@ export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Eleme
           {step.kind === 'dawn-announce' && <Waiting note="天亮了，正在公布昨夜消息…" />}
         </section>
       )}
+
+      {showTutorial && <TutorialScreen modal onClose={() => setShowTutorial(false)} />}
     </main>
   );
 }
