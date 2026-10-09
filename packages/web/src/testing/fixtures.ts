@@ -1,4 +1,4 @@
-import type { SeatView, VoteTally } from '../types';
+import type { SpeechRecord, SeatView, VoteTally } from '../types';
 
 let nextId = 0;
 
@@ -57,4 +57,62 @@ export function sampleTally(): VoteTally {
     exiled: 11,
     voided: false,
   };
+}
+
+/** Two days of speeches across all four contexts — the history-panel fixture. */
+export function sampleSpeechGroups(): Array<{ day: number; records: SpeechRecord[] }> {
+  return [
+    {
+      day: 1,
+      records: [
+        {
+          day: 1,
+          context: 'sheriff-speech',
+          seat: 3,
+          name: '3号',
+          text: '我上警是想带节奏，昨晚的局势我看得比较清楚，大家给我一个警徽位置。',
+        },
+        {
+          day: 1,
+          context: 'last-words',
+          seat: 2,
+          name: '2号',
+          text: '我是平民。7号昨天发言一直在划水，你们放逐我之后要盯住他。',
+        },
+        {
+          day: 1,
+          context: 'speech',
+          seat: 5,
+          name: '5号',
+          text: '我是预言家，昨晚查验了3号，他是查杀。今天请全部票型跟我的警徽流走。',
+        },
+      ],
+    },
+    {
+      day: 2,
+      records: [
+        {
+          day: 2,
+          context: 'speech',
+          seat: 9,
+          name: '9号',
+          text: '昨天放逐7号之后平安夜，说明我们可能放错了。今天听后置位的发言再定票。',
+        },
+        {
+          day: 2,
+          context: 'pk-speech',
+          seat: 5,
+          name: '5号',
+          text: '我再报一次验人：1号金水。11号悍跳狼，发言全是套话，票他。',
+        },
+        {
+          day: 2,
+          context: 'pk-speech',
+          seat: 11,
+          name: '11号',
+          text: '我才是真预言家，5号的警徽流自相矛盾，他退不下去了。',
+        },
+      ],
+    },
+  ];
 }

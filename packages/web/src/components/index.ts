@@ -18,6 +18,8 @@ export { VotePad } from './VotePad/VotePad';
 export type { VotePadProps } from './VotePad/VotePad';
 export { DayLog } from './DayLog/DayLog';
 export type { DayLogProps } from './DayLog/DayLog';
+export { SpeechHistory } from './SpeechHistory/SpeechHistory';
+export type { SpeechHistoryProps } from './SpeechHistory/SpeechHistory';
 export { GameOverReveal } from './GameOverReveal/GameOverReveal';
 export type { GameOverRevealProps } from './GameOverReveal/GameOverReveal';
 export { SpectatorView } from './SpectatorView/SpectatorView';
