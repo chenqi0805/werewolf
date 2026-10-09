@@ -9,6 +9,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "dev": "vite --port 5173 --host",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
