@@ -4,7 +4,7 @@ Standard 12-player 狼人杀 (Werewolf) online multiplayer — a server-authorit
 
 ## Status
 
-Monorepo scaffold (npm workspaces with `packages/engine`, `packages/server`, `packages/web`, shared tooling, GitHub Actions CI on every PR and on `main`, Node 24). The engine package now implements the complete standard-board ruleset — night resolution (狼人 → 女巫 → 预言家, 空刀 → 平安夜, poison overrides heal), witch potion economy, seer checks, hunter shot interrupts, idiot reveal, the full sheriff election (PK → revote → void, badge 移交/撕毁), and 屠边 win checks — as a pure `applyAction(state, action)` reducer with 93 passing Vitest tests. The room server and client remain placeholder shells and land in their own PRs.
+Full stack (npm workspaces: `packages/engine`, `packages/server`, `packages/web`, `packages/e2e`, shared tooling, GitHub Actions CI on every PR and on `main`, Node 24). The engine implements the complete standard-board ruleset — night resolution (狼人 → 女巫 → 预言家, 空刀 → 平安夜, poison overrides heal), witch potion economy, seer checks, hunter shot interrupts, idiot reveal, the full sheriff election (PK → revote → void, badge 移交/撕毁), and 屠边 win checks — as a pure `applyAction(state, action)` reducer with 93 passing Vitest tests. The room server (Socket.IO rooms, session tokens, phase timers, per-seat filtered views, static hosting of the built client) and the wired React client are merged and deployed; a Playwright e2e package plays two full 12-seat scripted games in CI and against the hosted deployment.
 
 ## Stack
 
@@ -30,10 +30,22 @@ Run a single package's checks with `npm run <script> -w @werewolf/<pkg>` (e.g. `
 
 ## Ports
 
-None yet. The Socket.IO server (future `packages/server`) and the Vite dev server (future `packages/web`) will define ports when they land.
+- **Room server (serves the built client + Socket.IO from one origin)** — `3210` in the hosted deployment; `WEREWOLF_PORT` overrides. The e2e webServer uses `3100` by default.
+- **Vite dev server** — `5173` (client development only; the e2e suite runs against production builds).
+
+## Environment seams (deployment)
+
+Set on the server process, all optional:
+
+- `WEREWOLF_PORT` — HTTP listen port (default `3210`).
+- `WEREWOLF_WEB_DIST` — absolute path to the built client (`packages/web/dist`) to serve statically; unset = API only.
+- `WEREWOLF_TIMERS` — JSON map of phase clock overrides in ms (keys: `night:wolf`, `night:witch`, `night:seer`, `sheriff-signup`, `sheriff-speech`, `sheriff-vote`, `dawn-announce`, `last-words`, `speech`, `exile-vote`, `pk-speech`, `pk-vote`, `hunter-shot`, `badge-pass`). Unset = standard humane pacing. The hosted verification deployment runs compact clocks so a full game completes in minutes; real-table deployments should leave it unset.
+
+Hosted deployment: the server runs on the project sandbox under tmux `svc-3210` (`WEREWOLF_PORT=3210 WEREWOLF_WEB_DIST=... npm run start -w @werewolf/server`), registered for persistent hosting. Rooms are in-memory: a sandbox pause/wake restarts the process and clears rooms.
 
 ## Codebase map
 
+- `packages/e2e` — `@werewolf/e2e`, the Playwright harness. `tests/harness/` bootstraps a 12-seat table from isolated browser contexts and discovers each dealt role from the seat's own page; two full-game scenarios (`tests/wolf-win.spec.ts` — 屠边 via villagers, `tests/good-win.spec.ts` — idiot reveal + hunter shot on the exile path) drive real UIs to the game-over reveal and capture per-seat evidence. Runs in CI as its own job and against a live deployment via `WEREWOLF_BASE_URL`; `scripts/start-server.mjs` boots the production server with compact clocks for local runs.
 - `packages/engine` — `@werewolf/engine`, the pure rules engine. Zero I/O; consumes the typed `PlayerAction` protocol (the future AI-bot seam) through `applyAction(state, action) → { state, events }`, deterministic and replayable from the event log.
   - Modules: `types.ts` (roles, seats, private-state unions) · `config.ts` (contested rule knobs) · `actions.ts` (the `PlayerAction`/`GameAction` protocol) · `errors.ts` (`GameError` codes) · `events.ts` (`GameEvent` + per-event visibility: public / server / private) · `state.ts` (GameState, night/speech/vote sub-state, helpers) · `create.ts` (`createGame` lineup validation) · `votes.ts` (ballot accounting) · `resolution.ts` (death application, hunter windows, idiot flips, win checks) · `night.ts` (wolf kill, witch potions, seer checks) · `day.ts` (dawn announce, last words, speeches, exile votes, PK) · `sheriff.ts` (election, PK revote, badge 移交/撕毁) · `engine.ts` (the `applyAction` router) · `index.ts` (public API).
   - Tests: `src/__tests__` — `harness.ts` (shared builders: `newGame`, `baseGame`, `nightKill`, `witchTurn`, `seerTurn`, `holdElection`, `openDay`, `speechRound`, `runNight`, `voteAll`, assertion helpers) plus one suite per rule area (`engine`, `night`, `witch`, `seer`, `hunter`, `idiot`, `sheriff`, `dayflow`, `win`, `fullgame`) — 93 tests mapping one-to-one onto the spec's Engine criteria.
@@ -41,9 +53,9 @@ None yet. The Socket.IO server (future `packages/server`) and the Vite dev serve
 - `packages/web` — `@werewolf/web`, the React + Vite client: renders `PlayerView`, sends `PlayerAction`.
 - `tsconfig.base.json` — shared strict compiler options, extended by every package tsconfig.
 - `eslint.config.js`, `.prettierrc.json` / `.prettierignore` — shared lint and format config.
-- `.github/workflows/ci.yml` — PR pipeline: `npm ci` → typecheck → lint → test → format check.
+- `.github/workflows/ci.yml` — PR pipeline: `npm ci` → typecheck → lint → test → format check, plus a Playwright e2e job running both 12-seat scenarios.
 - Package `exports` point at TS source (`./src/index.ts`) and packages use `moduleResolution: bundler` — the right default for the Vitest dev loop. Cross-package import wiring and any runtime emit strategy land with the PRs that connect the packages.
 
 ## Snapshot
 
-No sandbox snapshot captured yet. Capture one once the dev stack (room server + client with real dependencies) exists and is configured.
+A sandbox snapshot exists for the repo sandbox; the deployment recipe above is the canonical way to (re)build a hosted instance from any checkout: `npm ci`, `npm run build -w @werewolf/web`, then start the server with the env seams.
