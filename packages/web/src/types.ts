@@ -43,6 +43,18 @@ export interface SpeechMessage {
   text: string;
 }
 
+/** The four speech contexts that share one transcript. */
+export type SpeechContext = 'speech' | 'sheriff-speech' | 'last-words' | 'pk-speech';
+
+/** One accepted speech in the permanent record, pinned to its game day. */
+export interface SpeechRecord {
+  day: number;
+  context: SpeechContext;
+  seat: Seat;
+  name: string;
+  text: string;
+}
+
 export type LogKind = 'death' | 'vote' | 'system' | 'sheriff' | 'reveal';
 
 export interface LogEntry {

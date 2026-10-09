@@ -10,6 +10,7 @@ import {
   seatViewsOf,
   seerResultsOf,
   speakingSeatOf,
+  speechByDayOf,
   speechMessagesOf,
 } from '../client/adapters';
 import {
@@ -18,6 +19,7 @@ import {
   SeatPicker,
   SeerPad,
   SpectatorView,
+  SpeechHistory,
   SpeechPanel,
   VotePad,
   WitchPad,
@@ -62,6 +64,7 @@ function CandidateList({ seats }: { seats: SeatView[] }): JSX.Element {
 export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Element {
   const seats: SeatView[] = seatViewsOf(view);
   const entries = logToEntries(view.log);
+  const speechGroups = speechByDayOf(view.log);
   const { you } = view;
   const step = view.step;
 
@@ -78,6 +81,7 @@ export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Eleme
             phaseCaption="观战"
           />
           <DayLog entries={entries} />
+          <SpeechHistory groups={speechGroups} />
         </section>
       </main>
     );
@@ -117,6 +121,7 @@ export function GameScreen({ view, roomCode, send }: GameScreenProps): JSX.Eleme
         </div>
         <SeatGrid seats={seats} />
         <DayLog entries={entries} />
+        <SpeechHistory groups={speechGroups} />
       </section>
 
       {step.kind !== 'game-over' && (

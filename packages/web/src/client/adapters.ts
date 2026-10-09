@@ -7,7 +7,9 @@ import type {
   PlayerReveal,
   SeatView,
   SeerResult,
+  SpeechContext,
   SpeechMessage,
+  SpeechRecord,
   VoteTally,
 } from '../types';
 
@@ -187,21 +189,64 @@ export function logToEntries(log: readonly GameEvent[]): LogEntry[] {
   return entries;
 }
 
+/** One accepted speech pinned to its day — the shared walk behind both transcript adapters. */
+interface DatedSpeech {
+  day: number;
+  context: SpeechContext;
+  seat: Seat;
+  text: string;
+}
+
+/**
+ * Every SPEECH_MADE event with its game day. The day walks forward on
+ * NIGHT_BEGAN / DAY_BROKE exactly as `logToEntries` does; the server has
+ * already filtered the list to what this viewer may see.
+ */
+function datedSpeechOf(log: readonly GameEvent[]): DatedSpeech[] {
+  const speeches: DatedSpeech[] = [];
+  let day = 1;
+  log.forEach((event) => {
+    if (event.type === 'NIGHT_BEGAN' || event.type === 'DAY_BROKE') {
+      day = event.dayNumber;
+    }
+    if (event.type !== 'SPEECH_MADE') return;
+    speeches.push({ day, context: event.context, seat: event.seat, text: event.text });
+  });
+  return speeches;
+}
+
 /** Every SPEECH_MADE event as a transcript row, in log order. */
 export function speechMessagesOf(log: readonly GameEvent[]): SpeechMessage[] {
-  const messages: SpeechMessage[] = [];
-  let count = 0;
-  for (const event of log) {
-    if (event.type !== 'SPEECH_MADE') continue;
-    messages.push({
-      id: `sp-${count}`,
-      seat: event.seat,
-      name: seatLabel(event.seat),
-      text: event.text,
-    });
-    count += 1;
+  return datedSpeechOf(log).map((speech, index) => ({
+    id: `sp-${index}`,
+    seat: speech.seat,
+    name: seatLabel(speech.seat),
+    text: speech.text,
+  }));
+}
+
+/**
+ * The permanent speech record, grouped by game day — days ascending,
+ * within-day log order preserved. Speech never appears in DayLog, so this
+ * feeds the dedicated SpeechHistory panel instead.
+ */
+export function speechByDayOf(
+  log: readonly GameEvent[],
+): Array<{ day: number; records: SpeechRecord[] }> {
+  const byDay = new Map<number, SpeechRecord[]>();
+  for (const speech of datedSpeechOf(log)) {
+    const bucket = byDay.get(speech.day);
+    const record: SpeechRecord = {
+      day: speech.day,
+      context: speech.context,
+      seat: speech.seat,
+      name: seatLabel(speech.seat),
+      text: speech.text,
+    };
+    if (bucket) bucket.push(record);
+    else byDay.set(speech.day, [record]);
   }
-  return messages;
+  return [...byDay.entries()].sort(([a], [b]) => a - b).map(([day, records]) => ({ day, records }));
 }
 
 /**
