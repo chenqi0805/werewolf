@@ -67,6 +67,7 @@
   --text-lg: 1.25rem;
   --text-xl: 1.625rem;
   --text-2xl: 2.125rem;
+  --lh-body: 1.55;
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
@@ -77,6 +78,7 @@
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
   --space-12: 48px;
