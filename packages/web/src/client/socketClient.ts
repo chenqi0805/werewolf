@@ -13,9 +13,7 @@ export type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 /** Ack came back with `{ error }` instead of a payload. */
 export class AckError extends Error {
-  constructor(
-    public readonly code: string,
-  ) {
+  constructor(public readonly code: string) {
     super(code);
     this.name = 'AckError';
   }

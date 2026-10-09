@@ -74,9 +74,13 @@ export function seerResultsOf(you: YouView): SeerResult[] {
 
 /** Silent in the day log — private chatter or summarized elsewhere. */
 function isLoggedEvent(event: GameEvent): boolean {
-  return !['WOLF_KILL_VOTE', 'EXILE_VOTE_CAST', 'SHERIFF_VOTE_CAST', 'DEATH_RESOLVED', 'SPEECH_MADE'].includes(
-    event.type,
-  );
+  return ![
+    'WOLF_KILL_VOTE',
+    'EXILE_VOTE_CAST',
+    'SHERIFF_VOTE_CAST',
+    'DEATH_RESOLVED',
+    'SPEECH_MADE',
+  ].includes(event.type);
 }
 
 function logText(event: GameEvent): string | null {

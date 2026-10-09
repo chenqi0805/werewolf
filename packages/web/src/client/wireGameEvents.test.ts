@@ -17,7 +17,10 @@ function fakeSocket() {
     },
     off: (event: string, fn: (...args: unknown[]) => void) => {
       const list = listeners.get(event) ?? [];
-      listeners.set(event, list.filter((f) => f !== fn));
+      listeners.set(
+        event,
+        list.filter((f) => f !== fn),
+      );
     },
     fire: (event: string, ...args: unknown[]) => {
       for (const fn of listeners.get(event) ?? []) fn(...args);

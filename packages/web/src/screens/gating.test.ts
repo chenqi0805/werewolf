@@ -101,9 +101,9 @@ describe('target selectors', () => {
 
 describe('voteContextOf and canVoteNow', () => {
   it('routes the ballot action by step kind, including PK votes', () => {
-    expect(voteContextOf(view({ step: { kind: 'sheriff-vote', electorate: [3] } }))?.actionKind).toBe(
-      'SHERIFF_VOTE',
-    );
+    expect(
+      voteContextOf(view({ step: { kind: 'sheriff-vote', electorate: [3] } }))?.actionKind,
+    ).toBe('SHERIFF_VOTE');
     expect(voteContextOf(view({ step: { kind: 'exile-vote', electorate: [3] } }))?.actionKind).toBe(
       'EXILE_VOTE',
     );

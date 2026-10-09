@@ -76,8 +76,10 @@ export function seerTargets(view: PlayerView): SeatView[] {
 /** The ballot this step asks for, or null outside vote steps. */
 export function voteContextOf(view: PlayerView): VoteContext | null {
   const step = stepOf(view);
-  if (step.kind === 'sheriff-vote') return { actionKind: 'SHERIFF_VOTE', electorate: electorateViews(view, step.electorate) };
-  if (step.kind === 'exile-vote') return { actionKind: 'EXILE_VOTE', electorate: electorateViews(view, step.electorate) };
+  if (step.kind === 'sheriff-vote')
+    return { actionKind: 'SHERIFF_VOTE', electorate: electorateViews(view, step.electorate) };
+  if (step.kind === 'exile-vote')
+    return { actionKind: 'EXILE_VOTE', electorate: electorateViews(view, step.electorate) };
   if (step.kind === 'pk-vote') {
     return {
       actionKind: step.voteKind === 'sheriff' ? 'SHERIFF_VOTE' : 'EXILE_VOTE',
@@ -128,8 +130,7 @@ export function speechContextOf(
 /** Signup-pad state during the sheriff election. */
 export function sheriffSignupState(view: PlayerView): SheriffSignupState {
   const step = stepOf(view);
-  const candidates =
-    step.kind === 'sheriff-signup' ? electorateViews(view, step.candidates) : [];
+  const candidates = step.kind === 'sheriff-signup' ? electorateViews(view, step.candidates) : [];
   const { seat, alive } = view.you;
   const signedUp = seat !== null && candidates.some((r) => r.seat === seat);
   return {
@@ -155,7 +156,9 @@ export function hunterShotState(view: PlayerView): HunterShotState {
 /** The sheriff must set the day's speech direction before speeches begin. */
 export function directionNeeded(view: PlayerView): boolean {
   const step = stepOf(view);
-  return step.kind === 'speech' && step.order === null && view.you.hasBadge && view.you.seat !== null;
+  return (
+    step.kind === 'speech' && step.order === null && view.you.hasBadge && view.you.seat !== null
+  );
 }
 
 /** Countdown: milliseconds left, clamped at zero; null when no timer. */
