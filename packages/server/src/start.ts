@@ -16,7 +16,11 @@ const assistant = parseAssistantEnv();
 const opts: GatewayOptions = {};
 if (timers !== null) opts.timers = timers;
 if (voice !== null) opts.voice = voice;
-if (assistant !== null) opts.assistant = assistant;
+if (assistant !== null) {
+  opts.assistant = assistant;
+  // The 复盘 rides the same provider env — no separate postgame config exists.
+  opts.postgame = assistant;
+}
 
 const app = createApp(opts);
 if (webDist !== undefined && webDist !== '') {

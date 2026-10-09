@@ -7,6 +7,7 @@ import { RoomRegistry, type Room } from './room';
 import { clockKey, DEFAULT_TIMERS } from './defaults';
 import { eventsForSeat, viewFor, type PlayerView, type TimerInfo } from './view';
 import { attachAssistant, type AssistantOptions, type StrategyReply } from './assistant';
+import { attachPostgame, type PostgameOptions, type PostgameReply } from './postgame';
 import {
   currentSpeechSlot,
   handleVoiceFrame,
@@ -63,6 +64,8 @@ export interface ClientToServerEvents {
   'voice:frame': (chunk: ArrayBuffer) => void;
   /** Ask the strategy assistant; the caller's own view is the only prompt source. */
   'assistant:strategy': (ack: Ack<StrategyReply>) => void;
+  /** Ask for the post-game 复盘; any room viewer may arm the shared generation. */
+  'postgame:analysis': (ack: Ack<PostgameReply>) => void;
 }
 
 export interface SocketData {
@@ -100,6 +103,12 @@ export interface GatewayOptions {
    * every request acks ASSISTANT_UNAVAILABLE.
    */
   assistant?: AssistantOptions;
+  /**
+   * Post-game 复盘 provider config — same provider seams as `assistant` (the
+   * deployment's env choice covers both). Unset = every request acks
+   * ASSISTANT_UNAVAILABLE.
+   */
+  postgame?: PostgameOptions;
 }
 
 /**
@@ -125,6 +134,7 @@ export function attachGateway(
     opts?.voice ?? {},
   );
   attachAssistant(io, registry, opts?.assistant ?? {});
+  attachPostgame(io, registry, opts?.postgame ?? {});
 
   function bind(socket: GatewaySocket, roomCode: string, seat: Seat | null): void {
     socket.data.roomCode = roomCode;
