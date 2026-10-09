@@ -364,7 +364,7 @@ describe('transcribeWithOpenAI', () => {
   });
 
   it('posts the buffer to the transcriptions endpoint and parses the text', async () => {
-    const fake = vi.fn(
+    const fake = vi.fn<typeof fetch>(
       async () =>
         new Response(JSON.stringify({ text: '大家好' }), {
           status: 200,
