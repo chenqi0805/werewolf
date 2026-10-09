@@ -9,6 +9,7 @@ import type {
 import { SEAT_COUNT } from '@werewolf/engine';
 import { applyAction, createGame } from '@werewolf/engine';
 import { RoomError } from './errors';
+import { currentSpeechSlot, type SpeechSlot } from './voice';
 import { shuffledDeck } from './deck';
 import { makeRoomCode, makeToken } from './ids';
 import { defaultActionsFor } from './defaults';
@@ -115,6 +116,15 @@ export class Room {
   /** Server pacing step — closing signup, ending a speech slot, and so on. */
   proceed(): Applied {
     return this.apply({ type: 'PROCEED' });
+  }
+
+  /**
+   * The Room-level mirror of the engine's SPEAK gate: whoever currently holds
+   * a speech slot (day.ts handleSpeak's expected seat, all four contexts).
+   * The voice relay validates frames against this before the engine sees one.
+   */
+  currentSpeechSlot(): SpeechSlot | null {
+    return currentSpeechSlot(this.currentState);
   }
 
   /**

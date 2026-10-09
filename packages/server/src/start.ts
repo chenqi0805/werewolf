@@ -1,5 +1,7 @@
 import { createApp } from './gateway';
-import type { TimerOverrides } from './gateway';
+import type { GatewayOptions, TimerOverrides } from './gateway';
+import type { AssistantOptions } from './assistant';
+import type { VoiceOptions } from './voice';
 import { serveStatic } from './static';
 
 // Dev/production entry: boots the room server on one HTTP port. The Vite dev
@@ -8,8 +10,15 @@ import { serveStatic } from './static';
 const port = Number(process.env.WEREWOLF_PORT ?? process.env.PORT ?? 3000);
 const timers = parseTimers(process.env.WEREWOLF_TIMERS);
 const webDist = process.env.WEREWOLF_WEB_DIST;
+const voice = parseVoiceEnv();
+const assistant = parseAssistantEnv();
 
-const app = createApp(timers === null ? undefined : { timers });
+const opts: GatewayOptions = {};
+if (timers !== null) opts.timers = timers;
+if (voice !== null) opts.voice = voice;
+if (assistant !== null) opts.assistant = assistant;
+
+const app = createApp(opts);
 if (webDist !== undefined && webDist !== '') {
   app.httpServer.on('request', serveStatic(webDist));
 }
@@ -51,4 +60,46 @@ function parseTimers(raw: string | undefined): TimerOverrides | null {
     out[key] = value;
   }
   return out;
+}
+
+/**
+ * OPENAI_API_KEY arms the server-side STT fallback (WEREWOLF_STT_MODEL
+ * overrides the model, default gpt-4o-mini-transcribe; zh-CN fixed — the
+ * table speaks Mandarin). Unset = browser Web Speech captions only; speech
+ * slots without a client transcript pass silently.
+ */
+function parseVoiceEnv(): VoiceOptions | null {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (apiKey === undefined || apiKey === '') return null;
+  return {
+    stt: {
+      provider: 'openai',
+      apiKey,
+      model: process.env.WEREWOLF_STT_MODEL ?? 'gpt-4o-mini-transcribe',
+      language: 'zh-CN',
+    },
+  };
+}
+
+/**
+ * Assistant provider resolution, evaluated at boot:
+ *   1. WEREWOLF_ASSISTANT_BASE_URL — self-hosted OpenAI-compatible endpoint
+ *      (vLLM `:8000/v1`, Ollama `:11434/v1`, LM Studio, llama.cpp server);
+ *      model from WEREWOLF_ASSISTANT_MODEL (default qwen3:8b), key optional.
+ *   2. ANTHROPIC_API_KEY — Claude cloud fallback (Haiku-class default),
+ *      model from WEREWOLF_ASSISTANT_MODEL when set.
+ *   3. Neither — the assistant acks ASSISTANT_UNAVAILABLE (panel shows 未配置).
+ */
+function parseAssistantEnv(): AssistantOptions | null {
+  const baseUrl = process.env.WEREWOLF_ASSISTANT_BASE_URL;
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  const hasBaseUrl = baseUrl !== undefined && baseUrl !== '';
+  const hasAnthropic = anthropicApiKey !== undefined && anthropicApiKey !== '';
+  if (!hasBaseUrl && !hasAnthropic) return null;
+  return {
+    baseUrl,
+    apiKey: process.env.WEREWOLF_ASSISTANT_API_KEY,
+    model: process.env.WEREWOLF_ASSISTANT_MODEL,
+    anthropicApiKey,
+  };
 }

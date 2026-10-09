@@ -14,6 +14,7 @@ import {
 } from '../../index';
 import { expect } from 'vitest';
 import { io, type Socket } from 'socket.io-client';
+import type { VoiceChunk } from '../../voice';
 
 export type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -21,6 +22,9 @@ export interface Recorder {
   views: PlayerView[];
   events: GameEvent[];
   errors: ErrorPayload[];
+  voiceChunks: VoiceChunk[];
+  /** Assistant acks and other ask/response results, for the leak sweep. */
+  acks: unknown[];
   latest: PlayerView | null;
 }
 
@@ -52,8 +56,11 @@ export function scriptTimers(): Record<string, number> {
   return Object.fromEntries(keys.map((k) => [k, 40]));
 }
 
-export async function startServer(timers: Record<string, number> = scriptTimers()): Promise<Rig> {
-  const app = createApp({ timers });
+export async function startServer(
+  timers: Record<string, number> = scriptTimers(),
+  extra: Partial<Parameters<typeof createApp>[0]> = {},
+): Promise<Rig> {
+  const app = createApp({ timers, ...extra });
   await new Promise<void>((resolve) => app.httpServer.listen(0, '127.0.0.1', resolve));
   const port = (app.httpServer.address() as AddressInfo).port;
   return { app, port, clients: [], recs: [] };
@@ -67,13 +74,21 @@ export async function stopServer(rig: Rig): Promise<void> {
 }
 
 export function record(socket: Client): Recorder {
-  const rec: Recorder = { views: [], events: [], errors: [], latest: null };
+  const rec: Recorder = {
+    views: [],
+    events: [],
+    errors: [],
+    voiceChunks: [],
+    acks: [],
+    latest: null,
+  };
   socket.on('game:view', (view) => {
     rec.views.push(view);
     rec.latest = view;
   });
   socket.on('game:event', (event) => rec.events.push(event));
   socket.on('game:error', (error) => rec.errors.push(error));
+  socket.on('voice:chunk', (chunk) => rec.voiceChunks.push(chunk));
   return rec;
 }
 
@@ -368,6 +383,23 @@ export function sweepAllPayloads(rig: Rig): void {
       if (e.type === 'DEATH_ANNOUNCED') {
         expect(e, 'death announcement carries a cause').not.toHaveProperty('cause');
       }
+    }
+    // Voice relay never echoes the speaker's own frames back to their socket.
+    const mySeat = rec.latest?.you.seat ?? null;
+    for (const chunk of rec.voiceChunks) {
+      expect(chunk.seat, `client ${i} (seat ${mySeat}) received its own voice chunk`).not.toBe(
+        mySeat,
+      );
+    }
+    // Assistant replies carry only the validated strategy shape — never role
+    // data, private extras, or a raw view.
+    for (const ack of rec.acks) {
+      if (typeof ack !== 'object' || ack === null || !('lines' in ack)) continue;
+      expect(Object.keys(ack).sort(), `client ${i} assistant ack carried extra fields`).toEqual([
+        'lines',
+        'reasoning',
+        'warnings',
+      ]);
     }
   }
 }
