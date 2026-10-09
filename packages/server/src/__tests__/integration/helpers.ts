@@ -401,5 +401,16 @@ export function sweepAllPayloads(rig: Rig): void {
         'warnings',
       ]);
     }
+    // Post-game 复盘 acks carry only the validated review shape — never a
+    // raw state dump (the reveal itself is legal once the game is over).
+    for (const ack of rec.acks) {
+      if (typeof ack !== 'object' || ack === null || !('ratings' in ack)) continue;
+      expect(Object.keys(ack).sort(), `client ${i} postgame ack carried extra fields`).toEqual([
+        'keyMoments',
+        'mvp',
+        'ratings',
+        'summary',
+      ]);
+    }
   }
 }
