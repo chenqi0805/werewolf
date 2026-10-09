@@ -2,6 +2,9 @@ import type { JSX } from 'react';
 
 import { ROLE_META } from '../roles';
 import { ROLE_GUIDES } from '../roleGuides';
+// The screen reuses the shared scr-* layout classes; App imports this too,
+// but Storybook mounts the screen without App — so import it here as well.
+import './screens.css';
 import styles from './TutorialScreen.module.css';
 
 export interface TutorialScreenProps {
