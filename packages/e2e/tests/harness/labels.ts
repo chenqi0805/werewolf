@@ -38,8 +38,6 @@ export const SELECTORS = {
   seerPad: 'section[aria-label="预言家查验"]',
   votePad: 'section[aria-label="放逐投票"]',
   speechPanel: 'section[aria-label="发言"]',
-  speechInput: 'input[aria-label="发言输入"]',
-  speechSend: 'button:has-text("发送")',
   seatPickerGroup: '[role="group"][aria-label="选择目标"]',
   targetPickerChip: '[role="group"][aria-label="选择目标"] button[aria-pressed]',
   hunterShotPrompt: ':text("猎人技能：选择开枪目标")',

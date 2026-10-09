@@ -63,7 +63,10 @@ interface SessionHarness {
   nowMs: number;
 }
 
-function makeSession(opts?: { recognizer?: VoiceRecognizer | null; mic?: 'ok' | 'denied' }): SessionHarness {
+function makeSession(opts?: {
+  recognizer?: VoiceRecognizer | null;
+  mic?: 'ok' | 'denied';
+}): SessionHarness {
   const recognizer = opts?.recognizer === undefined ? fakeRecognizer() : opts.recognizer;
   const harness: SessionHarness = {
     session: null as unknown as VoiceSession,
@@ -211,7 +214,7 @@ describe('VoiceSession', () => {
 
   it('releases the mic on slot end and starts a fresh session on the next slot', async () => {
     const harness = makeSession();
-    await captureLive(harness, );
+    await captureLive(harness);
     harness.session.end();
     expect(harness.streamStops).toBe(1);
     expect(harness.session.current().status).toBe('silent');

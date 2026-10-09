@@ -92,3 +92,8 @@ export function requestPostgameAnalysis(
 export function sendAction(socket: GameSocket, action: PlayerAction): void {
   socket.emit('game:action', action);
 }
+
+/** Fire-and-forget: one captured mic frame from the current speech speaker. */
+export function emitVoiceFrame(socket: GameSocket, chunk: ArrayBuffer): void {
+  socket.emit('voice:frame', chunk);
+}

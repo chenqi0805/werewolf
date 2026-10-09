@@ -94,36 +94,55 @@
 
 .composer {
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-}
-
-.input {
-  flex: 1;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   background: var(--surface-raised);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
+}
+
+.micRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.micDot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-full);
+}
+
+.micDotLive {
+  background: var(--state-danger, #d64545);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.statusText {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.captions {
+  margin: 0;
   color: var(--text-primary);
   font-size: var(--text-sm);
+  line-height: 1.55;
+  min-height: 1.5em;
+  overflow-wrap: anywhere;
 }
 
-.input:disabled {
-  opacity: 0.55;
+.captionsInterim {
+  color: var(--text-muted);
 }
 
-.send {
-  padding: var(--space-2) var(--space-4);
-  background: var(--camp-good);
-  border-radius: var(--radius-md);
-  color: var(--text-inverse);
-  cursor: pointer;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-}
-
-.send:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
+.error {
+  margin: 0;
+  color: var(--state-danger, #d64545);
+  font-size: var(--text-xs);
 }
 
 .hint {

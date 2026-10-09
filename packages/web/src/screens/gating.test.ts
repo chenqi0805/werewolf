@@ -283,7 +283,9 @@ describe('speechSlotKeyOf', () => {
 
   it('is null outside speech slots', () => {
     expect(speechSlotKeyOf(view())).toBeNull();
-    expect(speechSlotKeyOf(view({ step: { kind: 'exile-vote', electorate: [1, 2, 3] } }))).toBeNull();
+    expect(
+      speechSlotKeyOf(view({ step: { kind: 'exile-vote', electorate: [1, 2, 3] } })),
+    ).toBeNull();
   });
 
   it('changes when the slot moves on — new deadline or new clock', () => {

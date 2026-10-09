@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import type { FormEvent, JSX } from 'react';
+import type { JSX } from 'react';
 
+import type { VoiceSpeechState } from '../../client/voiceSession';
 import type { Seat, SpeechMessage } from '../../types';
 import styles from './SpeechPanel.module.css';
+import { statusCopy } from './statusCopy';
 
 export interface SpeechPanelProps {
   messages: SpeechMessage[];
@@ -12,34 +13,32 @@ export interface SpeechPanelProps {
   mySeat: Seat | null;
   /** Whether the viewer may post to their slot now. */
   canSpeak: boolean;
-  onSend: (text: string) => void;
   disabled?: boolean;
-  /** Overrides the default explanation under a locked input. */
+  /** Overrides the default explanation under a locked composer. */
   hint?: string;
+  /**
+   * This seat's live voice-capture state; null when the viewer is not the
+   * current speaker (or the story omits voice). Speech is voice-only — the
+   * transcript auto-submits at the slot deadline, so there is nothing to type.
+   */
+  voice?: VoiceSpeechState | null;
 }
 
-const MAX_SPEECH_LENGTH = 300;
-
-/** Text speech panel: the transcript plus the viewer's own speech input. */
+/**
+ * Speech panel: the public transcript plus the current speaker's voice-only
+ * composer — mic status, live zh-CN captions, and the auto-submit schedule.
+ * There is no text input: silence passes the slot by design.
+ */
 export function SpeechPanel({
   messages,
   speakingSeat,
   mySeat,
   canSpeak,
-  onSend,
   disabled = false,
   hint,
+  voice = null,
 }: SpeechPanelProps): JSX.Element {
-  const [draft, setDraft] = useState('');
-
-  const handleSubmit = (event: FormEvent): void => {
-    event.preventDefault();
-    const text = draft.trim();
-    if (text.length === 0 || disabled || !canSpeak) return;
-    onSend(text);
-    setDraft('');
-  };
-
+  const speakingMine = canSpeak && mySeat !== null && !disabled;
   const lockedHint =
     hint ?? (mySeat === null ? '观战视角，无法发言' : canSpeak ? undefined : '轮到他人发言');
 
@@ -76,25 +75,34 @@ export function SpeechPanel({
           ))}
         </ul>
       )}
-      <form className={styles.composer} onSubmit={handleSubmit}>
-        <input
-          className={styles.input}
-          value={draft}
-          maxLength={MAX_SPEECH_LENGTH}
-          disabled={disabled || !canSpeak}
-          placeholder={canSpeak ? '说出你的推理…' : '等待中'}
-          onChange={(event) => setDraft(event.target.value)}
-          aria-label="发言输入"
-        />
-        <button
-          type="submit"
-          className={styles.send}
-          disabled={disabled || !canSpeak || draft.trim().length === 0}
-        >
-          发送
-        </button>
-      </form>
-      {lockedHint && !canSpeak ? <p className={styles.hint}>{lockedHint}</p> : null}
+      {speakingMine ? (
+        <div className={styles.composer}>
+          <div className={styles.micRow}>
+            <span
+              className={[styles.micDot, voice?.status === 'recording' && styles.micDotLive]
+                .filter(Boolean)
+                .join(' ')}
+              aria-hidden
+            />
+            <span className={styles.statusText} role="status">
+              {statusCopy(
+                voice ?? { status: 'requesting', interimText: '', finalText: '', error: null },
+              )}
+            </span>
+          </div>
+          {voice !== null && (voice.finalText.length > 0 || voice.interimText.length > 0) && (
+            <p className={styles.captions}>
+              {voice.finalText}
+              <span className={styles.captionsInterim}>{voice.interimText}</span>
+            </p>
+          )}
+          {voice?.error !== null && voice?.error !== undefined && (
+            <p className={styles.error}>{voice.error}</p>
+          )}
+        </div>
+      ) : (
+        lockedHint && <p className={styles.hint}>{lockedHint}</p>
+      )}
     </section>
   );
 }

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { JSX } from 'react';
 import type { PlayerAction, Seat } from '@werewolf/engine';
 
-import { requestStrategy, type GameSocket } from '../client/socketClient';
+import { emitVoiceFrame, requestStrategy, type GameSocket } from '../client/socketClient';
 import { ROLE_META } from '../roles';
 import type { SeatView } from '../types';
 import {
@@ -15,6 +15,7 @@ import {
   speechByDayOf,
   speechMessagesOf,
 } from '../client/adapters';
+import { useVoiceSpeech } from '../client/useVoiceSpeech';
 import {
   DayLog,
   SeatGrid,
@@ -40,6 +41,7 @@ import {
   seerTargets,
   sheriffSignupState,
   speechContextOf,
+  speechSlotKeyOf,
   strategyContextOf,
   voteContextOf,
 } from './gating';
@@ -50,6 +52,7 @@ interface GameScreenProps {
   view: PlayerView;
   roomCode: string;
   send: (action: PlayerAction) => void;
+  /** The page's live socket — carries the seat's captured voice frames. */
   socket: GameSocket;
 }
 
@@ -74,8 +77,24 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
   const { you } = view;
   const step = view.step;
   const [showTutorial, setShowTutorial] = useState(false);
+  const seat = you.seat;
 
-  if (you.seat === null) {
+  // Voice capture runs while the current speech slot is mine: mic frames go
+  // out over `voice:frame`, the joined transcript auto-submits as SPEAK one
+  // second before the slot deadline. Hooks stay unconditional — the spectator
+  // branch below simply never passes `canSpeak`.
+  const canSpeak = canSpeakNow(view);
+  const voice = useVoiceSpeech({
+    canSpeak: seat !== null && canSpeak,
+    slotKey: speechSlotKeyOf(view),
+    deadlineAtMs: view.timer?.endsAt ?? null,
+    submit: (text) => {
+      if (seat !== null) send({ type: 'SPEAK', actor: seat, text });
+    },
+    onFrame: (chunk) => emitVoiceFrame(socket, chunk),
+  });
+
+  if (seat === null) {
     return (
       <main className="scr-page">
         <section className="scr-panel">
@@ -94,7 +113,6 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
     );
   }
 
-  const seat: Seat = you.seat;
   const meta = you.role !== null ? ROLE_META[you.role] : null;
   const nightKind = nightPadKind(view);
   const signup = sheriffSignupState(view);
@@ -220,8 +238,8 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
                 messages={speechMessagesOf(view.log)}
                 speakingSeat={speakingSeatOf(step)}
                 mySeat={seat}
-                canSpeak={canSpeakNow(view)}
-                onSend={(text) => send({ type: 'SPEAK', actor: seat, text })}
+                canSpeak={canSpeak}
+                voice={voice}
               />
               {strategy !== null && (
                 <StrategyPanel

@@ -99,9 +99,7 @@ function browserDeps(): VoiceSessionDeps {
       recorder.ondataavailable = (event: BlobEvent) => {
         const blob = event.data;
         if (blob.size === 0) return;
-        tail = tail
-          .then(() => blob.arrayBuffer())
-          .then(onChunk, () => undefined); // a failed frame read never kills the chain
+        tail = tail.then(() => blob.arrayBuffer()).then(onChunk, () => undefined); // a failed frame read never kills the chain
       };
       recorder.start(250); // webm/opus frames every 250ms — the relay cadence
       return {

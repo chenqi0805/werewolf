@@ -27,13 +27,7 @@ export const SUBMIT_MARGIN_MS = 1_000;
  * still relays frames and the server-side STT fallback is authoritative.
  */
 export type VoiceSpeechStatus =
-  | 'idle'
-  | 'requesting'
-  | 'recording'
-  | 'submitted'
-  | 'unavailable'
-  | 'silent'
-  | 'unsupported';
+  'idle' | 'requesting' | 'recording' | 'submitted' | 'unavailable' | 'silent' | 'unsupported';
 
 export interface VoiceSpeechState {
   status: VoiceSpeechStatus;
