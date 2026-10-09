@@ -7,7 +7,7 @@ import type { Seat } from '@werewolf/engine';
 import Database from 'better-sqlite3';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { io } from 'socket.io-client';
-import type { CreateAck } from '../../index';
+import type { CreateAck, PlayerView } from '../../index';
 import {
   connect as connectRig,
   createRoom,
@@ -91,6 +91,13 @@ async function rejoinAll(port: number, code: string, sessions: Session[]): Promi
   return out;
 }
 
+/** First element or throw — indexed access under noUncheckedIndexedAccess. */
+function firstOf<T>(xs: T[]): T {
+  const x = xs[0];
+  if (x === undefined) throw new Error('expected a non-empty list');
+  return x;
+}
+
 /**
  * waitFor with a diagnostic tail: a timeout dumps the seat's last view and
  * any game errors, so a stalled phase names itself instead of failing bare.
@@ -117,7 +124,7 @@ async function waitView(
   }
 }
 async function driveToStableWindow(sessions: Session[]): Promise<void> {
-  const host = sessions[0];
+  const host = firstOf(sessions);
   await waitFor(
     () =>
       host.rec.latest?.step.kind === 'speech' &&
@@ -175,7 +182,7 @@ describe('persistence — SQLite event store', () => {
     dbPath = resolve(tmpdir(), `werewolf-persist-${randomUUID()}.db`);
     const rig = await startServer(stableTimers(), { dbPath });
     const { code, sessions } = await openTable(rig, 12);
-    await startRoom(sessions[0].client);
+    await startRoom(firstOf(sessions).client);
     await driveToStableWindow(sessions);
 
     // The disk record is the full action stream with provenance: player
@@ -209,7 +216,7 @@ describe('persistence — SQLite event store', () => {
     // The restored room still plays: the vote resolves, night 2 passes,
     // day 2 arrives.
     await waitView(
-      restored[0],
+      firstOf(restored),
       'day-2 speech after restore',
       (v) => v.dayNumber >= 2 && v.step.kind === 'speech',
       20_000,
@@ -219,7 +226,7 @@ describe('persistence — SQLite event store', () => {
     // pre-restart ballots exiled seat 1, so its slot never returns.
     const speaker =
       restored.find((s) => s.rec.latest?.players.find((p) => p.seat === s.seat)?.alive === true) ??
-      restored[1];
+      firstOf(restored);
     await waitView(
       speaker,
       'the living speaker speech slot',
@@ -286,7 +293,7 @@ describe('persistence — SQLite event store', () => {
 
     const first = await boot();
     const { code, sessions } = await openTable(first.port, 12);
-    await startRoom(sessions[0].client);
+    await startRoom(firstOf(sessions).client);
     await driveToStableWindow(sessions);
     const before = sessions.map((s) => JSON.stringify(s.rec.latest));
 
@@ -326,9 +333,9 @@ describe('persistence — SQLite event store', () => {
     // Room B: a started room, its single recorded action will be corrupted.
     const bSessions: { client: Client; rec: Recorder }[] = [];
     for (let i = 0; i < 12; i++) bSessions.push(await connectTo(rig.port));
-    const b = await createRoom(bSessions[0].client);
-    for (let i = 1; i < 12; i++) await joinRoom(bSessions[i].client, b.roomCode);
-    await startRoom(bSessions[0].client);
+    const b = await createRoom(firstOf(bSessions).client);
+    for (const s of bSessions.slice(1)) await joinRoom(s.client, b.roomCode);
+    await startRoom(firstOf(bSessions).client);
     // Room C: clean two-seat lobby room.
     const c = await openTable(rig, 2);
     await stopServer(rig);
@@ -376,7 +383,7 @@ describe('persistence — SQLite event store', () => {
     // Leg 2: a full scripted game played to a winner in a second room.
     const rigB = await startServer(scriptTimers(), { dbPath });
     const finished = await openTable(rigB, 12);
-    await startRoom(finished.sessions[0].client);
+    await startRoom(firstOf(finished.sessions).client);
     await playScriptedGame(rigB);
     const finalViews = finished.sessions.map((s) => s.rec.latest!);
     expect(finalViews.every((v) => v.phase === 'game-over' && v.winner !== null)).toBe(true);
