@@ -62,10 +62,20 @@ export type StepView =
   | { kind: 'speech'; order: Seat[] | null; cursor: number }
   | { kind: 'exile-vote'; electorate: Seat[] }
   | { kind: 'pk-speech'; tied: Seat[]; cursor: number }
-  | { kind: 'pk-vote'; electorate: Seat[] }
+  | { kind: 'pk-vote'; electorate: Seat[]; voteKind: 'sheriff' | 'exile' }
   | { kind: 'hunter-shot'; seat: Seat | null }
   | { kind: 'badge-pass'; seat: Seat | null }
   | { kind: 'game-over' };
+
+/**
+ * Ambient pacing info for the phase clock currently running in the room.
+ * Pure projection data — the server owns the clock; this only tells the
+ * client when the present step expires so it can render a countdown.
+ */
+export interface TimerInfo {
+  key: string;
+  endsAt: number;
+}
 
 export interface PlayerView {
   phase: Phase;
@@ -79,6 +89,8 @@ export interface PlayerView {
    * rejoining client receives the backlog inside its first view.
    */
   log: GameEvent[];
+  /** The step deadline the server is currently enforcing; null when none runs. */
+  timer: TimerInfo | null;
 }
 
 /** Roles the table has learned from public events so far. */
@@ -143,7 +155,13 @@ function stepView(state: GameState): StepView {
         cursor: state.pk?.cursor ?? 0,
       };
     case 'pk-vote':
-      return { kind: 'pk-vote', electorate: [...(state.vote?.electorate ?? [])] };
+      // An open election means the PK belongs to the sheriff race; once the
+      // election has resolved (or never happened), a PK vote is the exile's.
+      return {
+        kind: 'pk-vote',
+        electorate: [...(state.vote?.electorate ?? [])],
+        voteKind: state.election !== null ? 'sheriff' : 'exile',
+      };
     case 'hunter-shot':
     case 'badge-pass': {
       const head = state.resolution?.queue[0];
@@ -159,7 +177,11 @@ function stepView(state: GameState): StepView {
  * public information only. Dead players keep their own identity but drop
  * role-specific extras — the dead watch like spectators until game-over.
  */
-export function viewFor(state: GameState, seat: Seat | null): PlayerView {
+export function viewFor(
+  state: GameState,
+  seat: Seat | null,
+  timer: TimerInfo | null = null,
+): PlayerView {
   const over = state.phase === 'game-over';
   const viewer = seat === null ? null : (state.players[seat] ?? null);
   const revealed = publiclyRevealed(state);
@@ -242,5 +264,6 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
     players,
     step: stepView(state),
     log: eventsForSeat(state.log, seat),
+    timer,
   };
 }

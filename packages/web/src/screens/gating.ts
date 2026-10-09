@@ -1,0 +1,200 @@
+import type { PlayerAction } from '@werewolf/engine';
+import type { PlayerView, StepView, TimerInfo } from '@werewolf/server';
+
+import type { SeatView } from '../types';
+import { livingOthersOf, seatViewsOf, uncheckedTargetsOf, wolfTargetsOf } from '../client/adapters';
+
+/**
+ * Pure decision helpers for the screens: given the current PlayerView, what may
+ * this seat do right now, and with which action shape? The JSX stays thin —
+ * every gate here is unit-tested.
+ */
+
+export type NightPadKind = 'wolf' | 'witch' | 'seer' | 'waiting';
+
+export interface VoteContext {
+  actionKind: 'SHERIFF_VOTE' | 'EXILE_VOTE';
+  electorate: SeatView[];
+}
+
+export interface SheriffSignupState {
+  signedUp: boolean;
+  canSignup: boolean;
+  canWithdraw: boolean;
+  candidates: SeatView[];
+}
+
+export interface HunterShotState {
+  active: boolean;
+  targets: SeatView[];
+}
+
+function stepOf(view: PlayerView): StepView {
+  return view.step;
+}
+
+function seatViewsBySeat(view: PlayerView): Map<number, SeatView> {
+  return new Map(seatViewsOf(view).map((r) => [r.seat, r]));
+}
+
+function electorateViews(view: PlayerView, electorate: readonly number[]): SeatView[] {
+  const bySeat = seatViewsBySeat(view);
+  const out: SeatView[] = [];
+  for (const seat of electorate) {
+    const found = bySeat.get(seat);
+    if (found) out.push(found);
+  }
+  return out;
+}
+
+/** Which night pad, if any, this seat is entitled to right now. */
+export function nightPadKind(view: PlayerView): NightPadKind {
+  const step = stepOf(view);
+  if (step.kind !== 'night' || view.you.seat === null || !view.you.alive) return 'waiting';
+  const { role } = view.you;
+  if (step.step === 'wolf' && role === 'werewolf') return 'wolf';
+  if (step.step === 'witch' && role === 'witch') return 'witch';
+  if (step.step === 'seer' && role === 'seer') return 'seer';
+  return 'waiting';
+}
+
+/** Living non-wolf seats offered to the pack's kill vote. */
+export function nightTargets(view: PlayerView): SeatView[] {
+  return wolfTargetsOf(view);
+}
+
+/** Living others offered to the witch's poison. */
+export function poisonTargets(view: PlayerView): SeatView[] {
+  return livingOthersOf(view);
+}
+
+/** Living, not-yet-checked seats offered to the seer. */
+export function seerTargets(view: PlayerView): SeatView[] {
+  return uncheckedTargetsOf(view);
+}
+
+/** The ballot this step asks for, or null outside vote steps. */
+export function voteContextOf(view: PlayerView): VoteContext | null {
+  const step = stepOf(view);
+  if (step.kind === 'sheriff-vote')
+    return { actionKind: 'SHERIFF_VOTE', electorate: electorateViews(view, step.electorate) };
+  if (step.kind === 'exile-vote')
+    return { actionKind: 'EXILE_VOTE', electorate: electorateViews(view, step.electorate) };
+  if (step.kind === 'pk-vote') {
+    return {
+      actionKind: step.voteKind === 'sheriff' ? 'SHERIFF_VOTE' : 'EXILE_VOTE',
+      electorate: electorateViews(view, step.electorate),
+    };
+  }
+  return null;
+}
+
+/** May the viewer cast the current ballot? Dead seats, non-electorate, and the revealed idiot (no rights) may not. */
+export function canVoteNow(view: PlayerView): boolean {
+  const { seat, alive, voteWeight } = view.you;
+  if (seat === null || !alive || voteWeight <= 0) return false;
+  const context = voteContextOf(view);
+  if (!context) return false;
+  return context.electorate.some((r) => r.seat === seat);
+}
+
+/** May the viewer post to the current speech slot? */
+export function canSpeakNow(view: PlayerView): boolean {
+  const { seat, alive } = view.you;
+  if (seat === null || !alive) return false;
+  const step = stepOf(view);
+  const speaker =
+    (step.kind === 'speech' && step.order ? (step.order[step.cursor] ?? null) : null) ??
+    (step.kind === 'last-words' ? (step.queue[step.cursor] ?? null) : null) ??
+    (step.kind === 'sheriff-speech' ? (step.queue[step.cursor] ?? null) : null) ??
+    (step.kind === 'pk-speech' ? (step.tied[step.cursor] ?? null) : null);
+  return speaker === seat;
+}
+
+/** Caption key for the active speech panel, or null outside speech slots. */
+export function speechContextOf(
+  view: PlayerView,
+): 'sheriff-speech' | 'last-words' | 'speech' | 'pk-speech' | null {
+  const step = stepOf(view);
+  if (
+    step.kind === 'sheriff-speech' ||
+    step.kind === 'last-words' ||
+    step.kind === 'speech' ||
+    step.kind === 'pk-speech'
+  ) {
+    return step.kind;
+  }
+  return null;
+}
+
+/** Signup-pad state during the sheriff election. */
+export function sheriffSignupState(view: PlayerView): SheriffSignupState {
+  const step = stepOf(view);
+  const candidates = step.kind === 'sheriff-signup' ? electorateViews(view, step.candidates) : [];
+  const { seat, alive } = view.you;
+  const signedUp = seat !== null && candidates.some((r) => r.seat === seat);
+  return {
+    signedUp,
+    canSignup: step.kind === 'sheriff-signup' && seat !== null && alive && !signedUp,
+    canWithdraw: step.kind === 'sheriff-signup' && signedUp,
+    candidates,
+  };
+}
+
+/** Is the viewer's hunter shot window open, and who can be hit? */
+export function hunterShotState(view: PlayerView): HunterShotState {
+  const step = stepOf(view);
+  const armed =
+    step.kind === 'hunter-shot' &&
+    view.you.seat !== null &&
+    step.seat === view.you.seat &&
+    view.you.role === 'hunter' &&
+    !view.you.hunterShotUsed;
+  return { active: armed, targets: armed ? livingOthersOf(view) : [] };
+}
+
+/** The sheriff must set the day's speech direction before speeches begin. */
+export function directionNeeded(view: PlayerView): boolean {
+  const step = stepOf(view);
+  return (
+    step.kind === 'speech' && step.order === null && view.you.hasBadge && view.you.seat !== null
+  );
+}
+
+/** Countdown: milliseconds left, clamped at zero; null when no timer. */
+export function msLeftOf(timer: TimerInfo | null, now: number): number | null {
+  if (!timer) return null;
+  return Math.max(0, timer.endsAt - now);
+}
+
+/** Countdown: `m:ss`; negative leftovers clamp to `0:00`. */
+export function formatCountdown(msLeft: number): string {
+  const clamped = Math.max(0, msLeft);
+  const seconds = Math.floor(clamped / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** Poll helper for the countdown hook (kept out of tested logic). */
+export const COUNTDOWN_TICK_MS = 250;
+
+/** Build the action payload a pad submit should send, or null when invalid. */
+export function actionFor(
+  view: PlayerView,
+  kind: 'kill' | 'heal' | 'poison' | 'check' | 'shoot',
+  target: number | null,
+): PlayerAction | null {
+  const seat = view.you.seat;
+  if (seat === null || target === null) return null;
+  switch (kind) {
+    case 'kill':
+      return { type: 'WOLF_KILL', actor: seat, target };
+    case 'heal':
+      return { type: 'WITCH_HEAL', actor: seat };
+    case 'poison':
+      return { type: 'WITCH_POISON', actor: seat, target };
+    case 'check':
+      return { type: 'SEER_CHECK', actor: seat, target };
+    case 'shoot':
+      return { type: 'HUNTER_SHOOT', actor: seat, target };
+  }
+}

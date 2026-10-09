@@ -269,7 +269,11 @@ function actOnce(socket: Client, view: PlayerView, sent: Set<string>): void {
     const k = `${key}:pvote`;
     if (sent.has(k)) return;
     sent.add(k);
-    send({ type: 'EXILE_VOTE', actor: seat, target: alive.find((s) => s !== seat) ?? seat });
+    if (view.step.voteKind === 'sheriff') {
+      send({ type: 'SHERIFF_VOTE', actor: seat, target: null });
+    } else {
+      send({ type: 'EXILE_VOTE', actor: seat, target: alive.find((s) => s !== seat) ?? seat });
+    }
     return;
   }
   if (

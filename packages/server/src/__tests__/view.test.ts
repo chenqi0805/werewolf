@@ -200,3 +200,41 @@ describe('eventsForSeat', () => {
     expect(eventsForSeat(events, 9).some((e) => e.type === 'SEER_CHECKED')).toBe(true);
   });
 });
+
+describe('viewFor — pk-vote disambiguation', () => {
+  /** A 5–5 sheriff vote between seats 1 and 2 lands the room in a PK revote. */
+  function driveToSheriffPk(): ReturnType<typeof createGame> {
+    let state = apply(createGame(STANDARD), { type: 'START_GAME' });
+    for (const w of [1, 2, 3, 4]) {
+      state = apply(state, { type: 'WOLF_KILL', actor: w, target: null }); // 空刀: nobody dies
+    }
+    state = apply(state, { type: 'WITCH_PASS', actor: 10 });
+    state = apply(state, { type: 'SEER_PASS', actor: 9 });
+    state = apply(state, { type: 'SHERIFF_SIGNUP', actor: 1 });
+    state = apply(state, { type: 'SHERIFF_SIGNUP', actor: 2 });
+    state = apply(state, { type: 'PROCEED' }); // close signup
+    state = apply(state, { type: 'SPEAK', actor: 1, text: '竞选警长' });
+    state = apply(state, { type: 'PROCEED' });
+    state = apply(state, { type: 'SPEAK', actor: 2, text: '我也竞选' });
+    state = apply(state, { type: 'PROCEED' });
+    for (const s of [3, 4, 5, 6, 7]) {
+      state = apply(state, { type: 'SHERIFF_VOTE', actor: s, target: 1 });
+    }
+    for (const s of [8, 9, 10, 11, 12]) {
+      state = apply(state, { type: 'SHERIFF_VOTE', actor: s, target: 2 });
+    }
+    // PK: the tied candidates speak again, then the revote opens.
+    state = apply(state, { type: 'SPEAK', actor: 1, text: 'PK发言' });
+    state = apply(state, { type: 'PROCEED' });
+    state = apply(state, { type: 'SPEAK', actor: 2, text: 'PK发言' });
+    state = apply(state, { type: 'PROCEED' });
+    return state;
+  }
+
+  it('labels a PK vote with its vote kind so clients can route the ballot', () => {
+    const state = driveToSheriffPk();
+    expect(state.phase).toBe('pk-vote');
+    const view = viewFor(state, 3);
+    expect(view.step).toMatchObject({ kind: 'pk-vote', voteKind: 'sheriff' });
+  });
+});
