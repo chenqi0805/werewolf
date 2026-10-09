@@ -1,0 +1,4 @@
+# obvious repo policy — auto-detected from GitHub repo settings
+branches:
+  default: main
+mergeMethod: squash
