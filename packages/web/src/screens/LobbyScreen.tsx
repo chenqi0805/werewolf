@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 import type { PlayerView } from '@werewolf/server';
 
 import { occupiedCountOf, roomErrorText, seatViewsOf } from '../client/adapters';
-import { leaveRoom, startGame, type GameSocket } from '../client/socketClient';
+import { addBot, leaveRoom, removeBot, startGame, type GameSocket } from '../client/socketClient';
 import { SeatGrid } from '../components';
 import type { SeatView } from '../types';
 import { TutorialScreen } from './TutorialScreen';
@@ -45,6 +45,24 @@ export function LobbyScreen({ view, roomCode, socket, onQuit }: LobbyScreenProps
     }
   }
 
+  async function handleAddBot(): Promise<void> {
+    setActionError(null);
+    try {
+      await addBot(socket);
+    } catch (err) {
+      setActionError(err instanceof Error ? roomErrorText(err.message) : '添加AI失败，请重试');
+    }
+  }
+
+  async function handleRemoveBot(seat: number): Promise<void> {
+    setActionError(null);
+    try {
+      await removeBot(socket, seat);
+    } catch (err) {
+      setActionError(err instanceof Error ? roomErrorText(err.message) : '移除AI失败，请重试');
+    }
+  }
+
   if (showTutorial) {
     return <TutorialScreen onClose={() => setShowTutorial(false)} />;
   }
@@ -65,11 +83,25 @@ export function LobbyScreen({ view, roomCode, socket, onQuit }: LobbyScreenProps
           <span className="scr-caption">房间号</span>
           <span className="scr-code">{roomCode}</span>
         </div>
-        <p className="scr-subtitle">把房间号发给朋友，人满后任意玩家可以开局。</p>
+        <p className="scr-subtitle">
+          把房间号发给朋友，人不满可用 AI 补位，人满后任意玩家可以开局。
+        </p>
         <SeatGrid seats={seats} />
+        <div className="scr-row">
+          <button type="button" onClick={handleAddBot} disabled={joined >= 12}>
+            添加AI玩家
+          </button>
+          {seats
+            .filter((s) => s.isBot)
+            .map((s) => (
+              <button key={s.seat} type="button" onClick={() => handleRemoveBot(s.seat)}>
+                移除 {s.name}
+              </button>
+            ))}
+        </div>
         <div className="scr-actions">
-          <button type="button" onClick={handleStart} disabled={joined < 5}>
-            {joined < 5 ? '至少 5 人开局' : '开始游戏'}
+          <button type="button" onClick={handleStart} disabled={joined < 12}>
+            {joined < 12 ? '人满后开局' : '开始游戏'}
           </button>
           <button type="button" onClick={handleQuit}>
             退出房间

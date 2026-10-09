@@ -39,12 +39,13 @@ export function seatViewsOf(view: PlayerView): SeatView[] {
   const speaking = speakingSeatOf(view.step);
   return view.players.map((row) => ({
     seat: row.seat,
-    name: seatLabel(row.seat),
+    name: row.botName ?? seatLabel(row.seat),
     alive: row.alive,
     isSelf: row.seat === view.you.seat,
     isSheriff: row.hasBadge,
     isSpeaking: speaking === row.seat,
     occupied: row.occupied,
+    isBot: row.isBot || undefined,
     role: row.role === null ? undefined : row.role,
     revealedIdiot: row.revealedIdiot || undefined,
   }));
@@ -432,6 +433,8 @@ const ROOM_ERROR_TEXT: Record<string, string> = {
   BAD_TOKEN: '会话已失效，请重新加入',
   NOT_IN_ROOM: '你已不在房间中',
   NO_SEAT: '你没有座位',
+  NOT_A_BOT: '该座位不是AI玩家',
+  BOTS_UNAVAILABLE: 'AI玩家暂不可用',
 };
 
 /** Short zh label for a known room error code; unknown codes pass through. */

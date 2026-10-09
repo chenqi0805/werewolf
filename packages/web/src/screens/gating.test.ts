@@ -36,6 +36,8 @@ const row = (seat: number, overrides: Partial<PlayerView['players'][number]> = {
   revealedIdiot: false,
   voteWeight: 1,
   occupied: true,
+  isBot: false,
+  botName: null,
   role: null,
   ...overrides,
 });

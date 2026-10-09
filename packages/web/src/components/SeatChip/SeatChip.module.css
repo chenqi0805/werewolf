@@ -117,3 +117,12 @@
   font-size: 10px;
   font-weight: var(--weight-semibold);
 }
+
+.aiTag {
+  padding: 1px 6px;
+  background: var(--camp-wolf-soft);
+  border-radius: var(--radius-full);
+  color: var(--camp-wolf);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+}

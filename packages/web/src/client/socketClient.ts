@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import type { PlayerAction } from '@werewolf/engine';
 import type {
+  AddBotAck,
   ClientToServerEvents,
   CreateAck,
   JoinAck,
@@ -68,6 +69,16 @@ export function startGame(socket: GameSocket): Promise<OkAck> {
 /** Lobby-only quit: frees the seat server-side; the caller resets the UI. */
 export function leaveRoom(socket: GameSocket): Promise<OkAck> {
   return callAck<OkAck>((ack) => socket.emit('room:leave', ack));
+}
+
+/** Lobby-only: seat an AI player (lowest free seat, server-held token). */
+export function addBot(socket: GameSocket): Promise<AddBotAck> {
+  return callAck<AddBotAck>((ack) => socket.emit('room:addBot', ack));
+}
+
+/** Lobby-only: retire an AI player and free its seat. */
+export function removeBot(socket: GameSocket, seat: number): Promise<OkAck> {
+  return callAck<OkAck>((ack) => socket.emit('room:removeBot', seat, ack));
 }
 
 /** Ask the strategy assistant; it answers from the caller's own view or acks an error code. */
