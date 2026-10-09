@@ -1,0 +1,105 @@
+.pad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 640px;
+  padding: var(--space-6);
+  background: var(--surface-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.title {
+  margin: 0;
+  color: var(--role-witch);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+.victim {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--state-error-bg);
+  border-radius: var(--radius-sm);
+  color: var(--state-error-fg);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.potions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.potion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lifted);
+}
+
+.potionTitle {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.potionTitle.heal {
+  color: var(--role-witch);
+}
+
+.potionTitle.poison {
+  color: var(--camp-wolf);
+}
+
+.potionState {
+  flex: 1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.button {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-inverse);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  transition:
+    opacity var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.healButton {
+  background: var(--role-witch);
+}
+
+.poisonButton {
+  background: var(--camp-wolf);
+}
+
+.skip {
+  align-self: center;
+  padding: var(--space-2) var(--space-6);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+}
+
+.skip:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
