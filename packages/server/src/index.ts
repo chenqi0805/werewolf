@@ -79,3 +79,20 @@ export {
   type AssistantSocket,
   type SpeechRecord,
 } from './assistant';
+export {
+  attachPostgame,
+  buildPostgamePrompt,
+  postgameStatsOf,
+  parsePostgameReply,
+  validatePostgameReply,
+  POSTGAME_ERROR_CODES,
+  POSTGAME_MAX_TOKENS,
+  POSTGAME_JSON_SCHEMA,
+  type PostgameReply,
+  type PostgameRating,
+  type PostgameStat,
+  type PostgameOptions,
+  type PostgameAck,
+  type PostgameServer,
+  type PostgameSocket,
+} from './postgame';

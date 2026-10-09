@@ -113,7 +113,7 @@ export function speechRecordsOf(log: readonly GameEvent[]): SpeechRecord[] {
   return records;
 }
 
-const ROLE_LABELS: Record<Role, string> = {
+export const ROLE_LABELS: Record<Role, string> = {
   werewolf: '狼人',
   white_wolf_king: '白狼王',
   villager: '村民',
@@ -124,7 +124,7 @@ const ROLE_LABELS: Record<Role, string> = {
   guard: '守卫',
 };
 
-const CONTEXT_LABELS: Record<SpeechContext, string> = {
+export const CONTEXT_LABELS: Record<SpeechContext, string> = {
   'sheriff-speech': '警长竞选发言',
   'last-words': '遗言',
   speech: '白天发言',
@@ -216,7 +216,7 @@ export function buildStrategyPrompt(
   return lines.join('\n');
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
 }
@@ -232,6 +232,18 @@ const JSON_CORRECTION_PROMPT =
   '你上一条回复不是合法的 JSON 对象。请重新回答,只输出一个符合上述字段的 JSON 对象,不要输出任何其他文字。';
 
 /**
+ * Wire-call parameters every consumer of the chat adapter declares: the
+ * strict-JSON schema for guided decoding (where the runtime supports it) and
+ * the completion budget the reply may spend.
+ */
+export interface AskSpec {
+  /** Discriminator for the runtime's structured-output registry. */
+  schemaName: string;
+  schema: object;
+  maxTokens: number;
+}
+
+/**
  * One provider round trip. The OpenAI-compatible path tries guided decoding
  * first (structured outputs where the runtime supports it) and falls back to
  * a plain request when the endpoint rejects the field — belt and suspenders,
@@ -241,6 +253,7 @@ async function askProvider(
   provider: AssistantProvider,
   messages: ChatMessage[],
   fetchImpl: typeof fetch,
+  spec: AskSpec,
 ): Promise<string | null> {
   if (provider.kind === 'anthropic') {
     const response = await fetchImpl(provider.url, {
@@ -252,7 +265,7 @@ async function askProvider(
       },
       body: JSON.stringify({
         model: provider.model,
-        max_tokens: ASSISTANT_MAX_TOKENS,
+        max_tokens: spec.maxTokens,
         messages,
       }),
     });
@@ -271,13 +284,17 @@ async function askProvider(
             },
       body: JSON.stringify({
         model: provider.model,
-        max_tokens: ASSISTANT_MAX_TOKENS,
+        max_tokens: spec.maxTokens,
         messages,
         ...(guided
           ? {
               response_format: {
                 type: 'json_schema',
-                json_schema: { name: 'strategy_reply', strict: true, schema: STRATEGY_JSON_SCHEMA },
+                json_schema: {
+                  name: spec.schemaName,
+                  strict: true,
+                  schema: spec.schema,
+                },
               },
             }
           : {}),
@@ -328,14 +345,26 @@ function textFromAnthropic(parsed: unknown): string | null {
  * JSON is salvaged by taking the outermost object. Anything else is invalid.
  */
 export function parseStrategyReply(raw: string): StrategyReply | null {
+  return parseStrictJsonObject(raw, validateStrategyReply);
+}
+
+/**
+ * The parsing discipline every LLM consumer shares: strip reasoning traces,
+ * try direct JSON, salvage prose-wrapped JSON, and hand each candidate to the
+ * domain validator. Anything else is invalid.
+ */
+export function parseStrictJsonObject<T>(
+  raw: string,
+  validate: (value: unknown) => T | null,
+): T | null {
   const stripped = stripReasoningTrace(raw);
   const direct = tryParseJson(stripped);
-  if (direct !== null) return validateStrategyReply(direct);
+  if (direct !== null) return validate(direct);
   const start = stripped.indexOf('{');
   const end = stripped.lastIndexOf('}');
   if (start >= 0 && end > start) {
     const salvaged = tryParseJson(stripped.slice(start, end + 1));
-    if (salvaged !== null) return validateStrategyReply(salvaged);
+    if (salvaged !== null) return validate(salvaged);
   }
   return null;
 }
@@ -372,20 +401,42 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
+/**
+ * The strict-JSON ask/validate/retry loop every LLM consumer shares: one
+ * provider call, one correction round when the reply fails `parse`, then
+ * give up — the validator, not the prompt, is the output contract.
+ */
+export async function askStrictJson<T>(
+  provider: AssistantProvider,
+  messages: ChatMessage[],
+  fetchImpl: typeof fetch,
+  parse: (raw: string) => T | null,
+  spec: AskSpec,
+): Promise<T | null> {
+  const first = await askProvider(provider, messages, fetchImpl, spec);
+  if (first === null) return null;
+  const parsed = parse(first);
+  if (parsed !== null) return parsed;
+  messages.push({ role: 'assistant', content: first });
+  messages.push({ role: 'user', content: JSON_CORRECTION_PROMPT });
+  const second = await askProvider(provider, messages, fetchImpl, spec);
+  return second === null ? null : parse(second);
+}
+
+/** The strategy assistant's AskSpec — the defaults the F5 panel rides on. */
+export const STRATEGY_SPEC: AskSpec = {
+  schemaName: 'strategy_reply',
+  schema: STRATEGY_JSON_SCHEMA,
+  maxTokens: ASSISTANT_MAX_TOKENS,
+};
+
 /** The strict-JSON retry: one correction round, then the request fails. */
 async function askForReply(
   provider: AssistantProvider,
   messages: ChatMessage[],
   fetchImpl: typeof fetch,
 ): Promise<StrategyReply | null> {
-  const first = await askProvider(provider, messages, fetchImpl);
-  if (first === null) return null;
-  const parsed = parseStrategyReply(first);
-  if (parsed !== null) return parsed;
-  messages.push({ role: 'assistant', content: first });
-  messages.push({ role: 'user', content: JSON_CORRECTION_PROMPT });
-  const second = await askProvider(provider, messages, fetchImpl);
-  return second === null ? null : parseStrategyReply(second);
+  return askStrictJson(provider, messages, fetchImpl, parseStrategyReply, STRATEGY_SPEC);
 }
 
 /** Ack-shaped event — the reply (or a stable error code) comes back per socket. */
