@@ -4,7 +4,7 @@ Standard 12-player 狼人杀 (Werewolf) online multiplayer — a server-authorit
 
 ## Status
 
-Monorepo scaffold is in place: npm workspaces with three package shells (`packages/engine`, `packages/server`, `packages/web`), each with its own tsconfig, a placeholder export, and one passing Vitest test. Shared tooling: `tsconfig.base.json` (strict, ES2022), ESLint 10 flat config, Prettier, and GitHub Actions CI running typecheck + lint + test + format check on every PR and on `main` (Node 24). No game code yet — the engine, room server, and client land in their own PRs.
+Monorepo scaffold (npm workspaces with `packages/engine`, `packages/server`, `packages/web`, shared tooling, GitHub Actions CI on every PR and on `main`, Node 24). The engine package now implements the complete standard-board ruleset — night resolution (狼人 → 女巫 → 预言家, 空刀 → 平安夜, poison overrides heal), witch potion economy, seer checks, hunter shot interrupts, idiot reveal, the full sheriff election (PK → revote → void, badge 移交/撕毁), and 屠边 win checks — as a pure `applyAction(state, action)` reducer with 93 passing Vitest tests. The room server and client remain placeholder shells and land in their own PRs.
 
 ## Stack
 
@@ -34,7 +34,9 @@ None yet. The Socket.IO server (future `packages/server`) and the Vite dev serve
 
 ## Codebase map
 
-- `packages/engine` — `@werewolf/engine`, the pure rules engine. Zero I/O; will consume the typed `PlayerAction` protocol (the future AI-bot seam).
+- `packages/engine` — `@werewolf/engine`, the pure rules engine. Zero I/O; consumes the typed `PlayerAction` protocol (the future AI-bot seam) through `applyAction(state, action) → { state, events }`, deterministic and replayable from the event log.
+  - Modules: `types.ts` (roles, seats, private-state unions) · `config.ts` (contested rule knobs) · `actions.ts` (the `PlayerAction`/`GameAction` protocol) · `errors.ts` (`GameError` codes) · `events.ts` (`GameEvent` + per-event visibility: public / server / private) · `state.ts` (GameState, night/speech/vote sub-state, helpers) · `create.ts` (`createGame` lineup validation) · `votes.ts` (ballot accounting) · `resolution.ts` (death application, hunter windows, idiot flips, win checks) · `night.ts` (wolf kill, witch potions, seer checks) · `day.ts` (dawn announce, last words, speeches, exile votes, PK) · `sheriff.ts` (election, PK revote, badge 移交/撕毁) · `engine.ts` (the `applyAction` router) · `index.ts` (public API).
+  - Tests: `src/__tests__` — `harness.ts` (shared builders: `newGame`, `baseGame`, `nightKill`, `witchTurn`, `seerTurn`, `holdElection`, `openDay`, `speechRound`, `runNight`, `voteAll`, assertion helpers) plus one suite per rule area (`engine`, `night`, `witch`, `seer`, `hunter`, `idiot`, `sheriff`, `dayflow`, `win`, `fullgame`) — 93 tests mapping one-to-one onto the spec's Engine criteria.
 - `packages/server` — `@werewolf/server`, the Socket.IO room server: rooms, session tokens, phase timers, per-seat filtered views.
 - `packages/web` — `@werewolf/web`, the React + Vite client: renders `PlayerView`, sends `PlayerAction`.
 - `tsconfig.base.json` — shared strict compiler options, extended by every package tsconfig.

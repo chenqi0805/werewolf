@@ -1,18 +1,41 @@
 /**
- * Placeholder entry point. The pure rules engine (roles, phases, and the
- * typed PlayerAction reducer) lands in its own PR; nothing here is game
- * logic — it only proves the package wiring end to end.
+ * @werewolf/engine — the entire rulebook as a pure reducer.
+ *
+ * Zero I/O: no sockets, timers, persistence, or rendering. The server owns
+ * transport, pacing, and per-seat view projection; the client renders views
+ * and submits actions. This surface is also the seam phase-two AI-bot players
+ * plug into — a bot is just another producer of `PlayerAction`.
  */
-export interface PackageMeta {
-  readonly name: string;
-  readonly version: string;
-}
+export type { Camp, Phase, PrivateState, PlayerState, Role, Seat, SeatAssignment } from './types';
+export { canVote, GOD_ROLES, SEAT_COUNT, campOf } from './types';
 
-export const packageMeta: PackageMeta = {
-  name: '@werewolf/engine',
-  version: '0.0.0',
-};
+export type { EngineConfig } from './config';
+export { DEFAULT_CONFIG } from './config';
 
-export function formatMeta(meta: PackageMeta): string {
-  return `${meta.name}@${meta.version}`;
-}
+export type { GameAction, PlayerAction, ServerAction } from './actions';
+export type { GameEvent, EventVisibility, TallyRow } from './events';
+export { visibilityOf } from './events';
+
+export type {
+  DawnState,
+  DeathCause,
+  DeathRecord,
+  ElectionState,
+  GameState,
+  LastWordsState,
+  NightState,
+  PKState,
+  ResolutionState,
+  SpeechState,
+  VoteState,
+} from './state';
+
+export type { GameErrorCode } from './errors';
+export { GameError } from './errors';
+
+export { createGame } from './create';
+export { applyAction, type AppliedAction } from './engine';
+
+// Rule helpers the server and future bot framework may reuse.
+export { voteWeight, tallyVotes, tallyRows, type Plurality } from './votes';
+export { winCheck } from './resolution';
