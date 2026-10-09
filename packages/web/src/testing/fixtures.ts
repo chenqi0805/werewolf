@@ -1,4 +1,6 @@
-import type { SpeechRecord, SeatView, VoteTally } from '../types';
+import type { PostgameReply } from '@werewolf/server';
+
+import type { PlayerPostgameStat, SpeechRecord, SeatView, VoteTally } from '../types';
 
 let nextId = 0;
 
@@ -132,4 +134,220 @@ export function sampleSpeechGroups(): Array<{ day: number; records: SpeechRecord
       ],
     },
   ];
+}
+
+/**
+ * A finished two-day board's deterministic stats — every wolf dead (放逐,
+ * 枪, 自爆), five seats surviving. Mirrors what the postgameStatsOf adapter
+ * derives from a client-visible game-over log.
+ */
+export function samplePostgameStats(): PlayerPostgameStat[] {
+  return [
+    {
+      seat: 1,
+      name: '1号',
+      role: 'seer',
+      speeches: 2,
+      speechChars: 64,
+      daysSurvived: 2,
+      votesCast: 0,
+      votesReceived: 0,
+      death: null,
+    },
+    {
+      seat: 2,
+      name: '2号',
+      role: 'villager',
+      speeches: 1,
+      speechChars: 22,
+      daysSurvived: 0,
+      votesCast: 0,
+      votesReceived: 0,
+      death: '首夜出局',
+    },
+    {
+      seat: 3,
+      name: '3号',
+      role: 'witch',
+      speeches: 2,
+      speechChars: 58,
+      daysSurvived: 2,
+      votesCast: 0,
+      votesReceived: 0,
+      death: null,
+    },
+    {
+      seat: 4,
+      name: '4号',
+      role: 'werewolf',
+      speeches: 1,
+      speechChars: 30,
+      daysSurvived: 0,
+      votesCast: 0,
+      votesReceived: 5,
+      death: '第1天放逐',
+    },
+    {
+      seat: 5,
+      name: '5号',
+      role: 'werewolf',
+      speeches: 2,
+      speechChars: 52,
+      daysSurvived: 1,
+      votesCast: 0,
+      votesReceived: 4,
+      death: '第2天放逐',
+    },
+    {
+      seat: 6,
+      name: '6号',
+      role: 'villager',
+      speeches: 1,
+      speechChars: 26,
+      daysSurvived: 1,
+      votesCast: 0,
+      votesReceived: 0,
+      death: '第2夜出局',
+    },
+    {
+      seat: 7,
+      name: '7号',
+      role: 'hunter',
+      speeches: 2,
+      speechChars: 74,
+      daysSurvived: 2,
+      votesCast: 0,
+      votesReceived: 1.5,
+      death: null,
+    },
+    {
+      seat: 8,
+      name: '8号',
+      role: 'villager',
+      speeches: 0,
+      speechChars: 0,
+      daysSurvived: 1,
+      votesCast: 0,
+      votesReceived: 0,
+      death: '第2天被自爆带走',
+    },
+    {
+      seat: 9,
+      name: '9号',
+      role: 'idiot',
+      speeches: 2,
+      speechChars: 66,
+      daysSurvived: 2,
+      votesCast: 0,
+      votesReceived: 3,
+      death: null,
+    },
+    {
+      seat: 10,
+      name: '10号',
+      role: 'werewolf',
+      speeches: 0,
+      speechChars: 0,
+      daysSurvived: 0,
+      votesCast: 0,
+      votesReceived: 2,
+      death: '第1天被枪带走',
+    },
+    {
+      seat: 11,
+      name: '11号',
+      role: 'villager',
+      speeches: 2,
+      speechChars: 60,
+      daysSurvived: 2,
+      votesCast: 0,
+      votesReceived: 0,
+      death: null,
+    },
+    {
+      seat: 12,
+      name: '12号',
+      role: 'white_wolf_king',
+      speeches: 1,
+      speechChars: 18,
+      daysSurvived: 1,
+      votesCast: 0,
+      votesReceived: 1,
+      death: '第2天自爆出局',
+    },
+  ];
+}
+
+/** The shared 复盘 reply the AI block renders — MVP is the hunter on 7号. */
+export function samplePostgameReply(): PostgameReply {
+  return {
+    summary:
+      '狼队首夜刀掉2号试探，白天好人借警徽流放逐悍跳狼4号，猎人7号随即开枪带走10号补刀。第2夜狼队偷袭6号，第2天好人放逐5号收网；白狼王自爆带走8号已无力回天，好人阵营完成屠狼。',
+    keyMoments: [
+      '首夜狼刀带走2号，遗言指向4号。',
+      '第1天警徽流带票，4号被放逐，猎人开枪带走10号。',
+      '第2夜狼刀6号，好人白天放逐5号。',
+      '白狼王自爆带走8号，狼队仍差一步屠边。',
+    ],
+    mvp: 7,
+    ratings: [
+      {
+        seat: 1,
+        score: 8,
+        rationale: '开局报验果断，警徽流清晰。',
+        highlight: '金水链稳住好人视野。',
+      },
+      {
+        seat: 2,
+        score: 5,
+        rationale: '首夜出局，遗言信息有限。',
+        highlight: '遗言点出4号发言疑点。',
+      },
+      {
+        seat: 3,
+        score: 7,
+        rationale: '解药留到关键夜，毒未误伤。',
+        highlight: '解药救下首夜刀口。',
+      },
+      { seat: 4, score: 4, rationale: '悍跳仓促，票型暴露身份。', highlight: '白天带偏一轮投票。' },
+      {
+        seat: 5,
+        score: 3,
+        rationale: '发言摇摆，自证无力。',
+        highlight: '第2天几乎骗过好人票型。',
+      },
+      { seat: 6, score: 5, rationale: '站边正确但缺少输出。', highlight: '第2天归票坚定。' },
+      {
+        seat: 7,
+        score: 9,
+        rationale: '全场最强节奏掌控，枪口精准。',
+        highlight: '带走10号狼牌锁定胜局。',
+      },
+      {
+        seat: 8,
+        score: 4,
+        rationale: '发言较少，存在感低。',
+        highlight: '被自爆带走前提醒好人归票。',
+      },
+      {
+        seat: 9,
+        score: 6,
+        rationale: '翻牌后发言稳住，拖住狼队节奏。',
+        highlight: '放逐无效白吃狼队一票。',
+      },
+      { seat: 10, score: 4, rationale: '冲锋过猛，早早暴露。', highlight: '试图自水身份未果。' },
+      {
+        seat: 11,
+        score: 7,
+        rationale: '后置位发言清晰，归票准确。',
+        highlight: '组织好人统一票型。',
+      },
+      {
+        seat: 12,
+        score: 6,
+        rationale: '自爆时机精准，为狼队续命。',
+        highlight: '自爆带走8号好人。',
+      },
+    ],
+  };
 }

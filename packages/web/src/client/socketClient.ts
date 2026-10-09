@@ -78,8 +78,13 @@ export function requestStrategy(socket: GameSocket): Promise<StrategyReply> {
 /**
  * Ask for the finished room's shared 复盘; the server memoizes one
  * generation per room, so repeat and concurrent calls join the same answer.
+ * Tolerates a missing socket — GameOverScreen's socket prop is optional and
+ * the block is disabled then; this reject is the contract's safety net.
  */
-export function requestPostgameAnalysis(socket: GameSocket): Promise<PostgameReply> {
+export function requestPostgameAnalysis(
+  socket: GameSocket | null | undefined,
+): Promise<PostgameReply> {
+  if (!socket) return Promise.reject(new AckError('NOT_IN_ROOM'));
   return callAck<PostgameReply>((ack) => socket.emit('postgame:analysis', ack));
 }
 

@@ -186,4 +186,10 @@ describe('requestPostgameAnalysis', () => {
     expect(error).toBeInstanceOf(AckError);
     expect((error as AckError).code).toBe('NOT_GAME_OVER');
   });
+
+  it('rejects with AckError when there is no socket', async () => {
+    const error = await requestPostgameAnalysis(null).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AckError);
+    expect((error as AckError).code).toBe('NOT_IN_ROOM');
+  });
 });
