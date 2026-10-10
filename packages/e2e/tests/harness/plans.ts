@@ -95,12 +95,14 @@ export function wolfKingPlan(roles: Map<Seat, Role>): PlayPlan {
       return ofRole(targets, 'villager')[0] ?? fail('no villager to kill');
     },
     guardProtect: (day, targets, banned) => {
-      // Night 1 covers the knife — the save. Later nights: the first living
-      // seat that is not the banned one, deterministically.
+      // Night 1 covers the knife — the save. Later nights: cover a god and
+      // never a villager (first ascending, skipping the banned seat) so the
+      // script's fate table stays deterministic — the knife always lands on
+      // the next villager.
       if (day === 1) {
         return targets.includes(knife) ? knife : fail('guard cannot cover the knife');
       }
-      return targets.find((t) => t !== banned) ?? null;
+      return targets.find((t) => t !== banned && roles.get(t) !== 'villager') ?? null;
     },
     witch: () => ({ kind: 'pass' }),
     seerCheck: (_day, targets) => targets[0] ?? fail('seer has no unchecked target'),
