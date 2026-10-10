@@ -309,6 +309,52 @@ describe('attachInvites', () => {
     // The in-flight gate does not consume the budget — busy is not a spend.
   });
 
+  it('caps lifetime invites at twenty per room across every seat', async () => {
+    const room = lobbyWithTwo();
+    const sendImpl = vi.fn(async () => {});
+    const server = new FakeInviteServer();
+    attachInvites(server, registryOf(room), inviteOpts(sendImpl));
+    const first = new FakeInviteSocket();
+    bind(first, room.code, 1);
+    server.connect(first);
+    const second = new FakeInviteSocket();
+    bind(second, room.code, 2);
+    server.connect(second);
+    // Two full seat budgets — ten each — spend the room's pool.
+    for (const socket of [first, second]) {
+      for (let i = 0; i < 10; i++) {
+        expect(await socket.invite(`friend${i}@example.com`)).toEqual({ ok: true });
+      }
+    }
+    const third = new FakeInviteSocket();
+    bind(third, room.code, 3);
+    server.connect(third);
+    expect(await third.invite('friend@example.com')).toEqual({ error: 'INVITE_RATE_LIMITED' });
+    expect(sendImpl).toHaveBeenCalledTimes(20);
+  });
+
+  it('honors a custom per-room lifetime cap across seats', async () => {
+    const room = lobbyWithTwo();
+    const sendImpl = vi.fn(async () => {});
+    const server = new FakeInviteServer();
+    attachInvites(server, registryOf(room), inviteOpts(sendImpl, { maxInvitesPerRoom: 3 }));
+    const first = new FakeInviteSocket();
+    bind(first, room.code, 1);
+    server.connect(first);
+    // Three sends sit under the seat's own budget of ten — the room cap is
+    // what binds.
+    for (const addr of ['a@example.com', 'b@example.com', 'c@example.com']) {
+      expect(await first.invite(addr)).toEqual({ ok: true });
+    }
+    expect(await first.invite('d@example.com')).toEqual({ error: 'INVITE_RATE_LIMITED' });
+    // A fresh seat inherits the spent pool — the cap is the room's.
+    const second = new FakeInviteSocket();
+    bind(second, room.code, 2);
+    server.connect(second);
+    expect(await second.invite('e@example.com')).toEqual({ error: 'INVITE_RATE_LIMITED' });
+    expect(sendImpl).toHaveBeenCalledTimes(3);
+  });
+
   it('limits the default budget to ten sends per room:seat', async () => {
     const room = lobbyWithTwo();
     const sendImpl = vi.fn(async () => {});

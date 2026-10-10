@@ -6,9 +6,10 @@ import type { RoomRegistry } from './room';
  * Email invites — a seated player sends a friend a one-shot join link.
  *
  * The strategy-assistant module is the implementation template, end to end:
- * the provider resolves at boot, sends ride a per-room:seat budget, the
- * handler is always attached (no provider → every request still acks
- * INVITE_UNAVAILABLE), and the outbound HTTP call hangs on a test seam.
+ * the provider resolves at boot, sends ride a per-room:seat budget under a
+ * per-room lifetime cap, the handler is always attached (no provider → every
+ * request still acks INVITE_UNAVAILABLE), and the outbound HTTP call hangs on
+ * a test seam.
  * Sends are stateless one-shots — nothing about a recipient is stored, and
  * nothing here touches the engine: an invite is room metadata in motion.
  *
@@ -34,6 +35,8 @@ export interface InviteOptions {
   fetchImpl?: typeof fetch;
   /** Test knob: invites per room:seat per lobby (default MAX_INVITES_PER_LOBBY). */
   maxInvitesPerLobby?: number;
+  /** Test knob: lifetime invites per room across all seats (default MAX_INVITES_PER_ROOM). */
+  maxInvitesPerRoom?: number;
 }
 
 /**
@@ -50,6 +53,13 @@ export const MAX_EMAIL_LENGTH = 254;
 
 /** Invites one seat may send into one lobby — bounded provider billing. */
 export const MAX_INVITES_PER_LOBBY = 10;
+
+/**
+ * Lifetime invites one room may spend across every seat — a minted room's
+ * total email volume is bounded, so a room-creation flood cannot compound
+ * into an email flood (audit F4).
+ */
+export const MAX_INVITES_PER_ROOM = 20;
 
 /** Ack error codes for room:invite — stable protocol values. */
 export const INVITE_ERROR_CODES = [
@@ -205,7 +215,11 @@ export function attachInvites(
   const sender = resolveInviteSender(opts);
   const baseUrl = opts?.baseUrl ?? '';
   const maxInvites = opts?.maxInvitesPerLobby ?? MAX_INVITES_PER_LOBBY;
+  const maxRoomInvites = opts?.maxInvitesPerRoom ?? MAX_INVITES_PER_ROOM;
   const budgets = new Map<string, LobbyBudget>();
+  // One lifetime number per room. Entries share the per-seat budgets'
+  // memory model — no eviction seam exists on the registry view here.
+  const roomCounts = new Map<string, number>();
 
   io.on('connection', (socket) => {
     socket.on('room:invite', (email, ack) => {
@@ -229,6 +243,14 @@ export function attachInvites(
         ack({ error: 'INVITE_UNAVAILABLE' });
         return;
       }
+      // The room's lifetime pool is checked before any seat's slice: once
+      // it is spent no seat can send, and waiting out an in-flight send will
+      // not help — RATE_LIMITED is the truthful ack even mid-send.
+      const roomSpent = roomCounts.get(room.code) ?? 0;
+      if (roomSpent >= maxRoomInvites) {
+        ack({ error: 'INVITE_RATE_LIMITED' });
+        return;
+      }
       const budgetKey = `${room.code}:${seat}`;
       let budget = budgets.get(budgetKey);
       if (budget === undefined) {
@@ -244,6 +266,9 @@ export function attachInvites(
         return;
       }
       budget.count += 1;
+      // The room spend commits with the seat's — an attempt, counted before
+      // the send like the per-seat budget, and kept on provider failure.
+      roomCounts.set(room.code, roomSpent + 1);
       budget.inflight = true;
       const mail = { to: address, ...buildInviteEmail(room.code, room.boardId, baseUrl) };
       void (async () => {
