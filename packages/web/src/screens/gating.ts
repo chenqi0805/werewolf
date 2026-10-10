@@ -123,8 +123,12 @@ export function canVoteNow(view: PlayerView): boolean {
 /** May the viewer post to the current speech slot? */
 export function canSpeakNow(view: PlayerView): boolean {
   const { seat, alive } = view.you;
-  if (seat === null || !alive) return false;
+  if (seat === null) return false;
   const step = stepOf(view);
+  // Last words are assigned after death: the server queues the dead seat and
+  // accepts its SPEAK, so this is the one step a dead viewer may still hold.
+  // Every other step kind belongs to the living.
+  if (!alive) return step.kind === 'last-words' && step.queue[step.cursor] === seat;
   const speaker =
     (step.kind === 'speech' && step.order ? (step.order[step.cursor] ?? null) : null) ??
     (step.kind === 'last-words' ? (step.queue[step.cursor] ?? null) : null) ??

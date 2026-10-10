@@ -321,6 +321,19 @@ describe('canSpeakNow and speechContextOf', () => {
     ).toBe(false);
   });
 
+  it('lets a dead viewer speak only in their own last-words slot', () => {
+    const dead = you({ alive: false });
+    expect(
+      canSpeakNow(view({ you: dead, step: { kind: 'last-words', queue: [3], cursor: 0 } })),
+    ).toBe(true); // the server queues the just-dead seat and accepts its SPEAK
+    expect(
+      canSpeakNow(view({ you: dead, step: { kind: 'last-words', queue: [4], cursor: 0 } })),
+    ).toBe(false); // another seat's last words
+    expect(canSpeakNow(view({ you: dead, step: { kind: 'speech', order: [4], cursor: 0 } }))).toBe(
+      false,
+    ); // dead seats never hold the day speech
+  });
+
   it('exposes the speech context for panel captions', () => {
     expect(speechContextOf(view({ step: { kind: 'sheriff-speech', queue: [3], cursor: 0 } }))).toBe(
       'sheriff-speech',
