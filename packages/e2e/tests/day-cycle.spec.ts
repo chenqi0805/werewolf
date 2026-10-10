@@ -45,7 +45,7 @@ test('scenario E: the seer is elected sheriff — 警上发言, 警下 ballot, a
     // the elected sheriff's 1.5-weight vote landing in one.
     await expectPostgameSection(anchorPage(table));
     const votes = await anchorPage(table)
-      .locator('section[aria-label="全场数据"] tbody tr td:nth-child(6)')
+      .locator('table[aria-label="全场数据"] tbody tr td:nth-child(6)')
       .allTextContents();
     expect(
       votes.some((text) => /^\d+\.5 票$/.test(text.trim())),
