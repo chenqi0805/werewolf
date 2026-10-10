@@ -190,9 +190,11 @@ export function attachGateway(
   );
   attachAssistant(io, registry, opts?.assistant ?? {});
   attachPostgame(io, registry, opts?.postgame ?? {});
-  // The returned flag is the lobby's capability hint — the view says whether
-  // the 邮件邀请 affordance may show, with no extra round trip.
-  const invitesAvailable = attachInvites(io, registry, opts?.invites);
+  // The returned attachment carries the lobby capability hint — the view
+  // says whether the 邮件邀请 affordance may show — and the seat-freed hook
+  // the leave/removeBot paths call below.
+  const invites = attachInvites(io, registry, opts?.invites);
+  const invitesAvailable = invites.available;
 
   function bind(socket: GatewaySocket, roomCode: string, seat: Seat | null): void {
     // One room per socket: a socket already fanned out to another room leaves
@@ -500,8 +502,10 @@ export function attachGateway(
         return;
       }
       // The token died with the seat; the socket goes back to the connect
-      // state and stops receiving this room's views.
+      // state and stops receiving this room's views. The seat is freed —
+      // its invite budget goes with it (the budget follows the occupant).
       unbind(socket);
+      invites.clearSeatBudget(room.code, seat);
       ack({ ok: true });
       broadcastOccupancy(room);
     });
@@ -548,6 +552,7 @@ export function attachGateway(
       }
       try {
         botManager.removeBot(room, botSeat);
+        invites.clearSeatBudget(room.code, botSeat);
         ack({ ok: true });
         broadcastOccupancy(room);
       } catch (error) {

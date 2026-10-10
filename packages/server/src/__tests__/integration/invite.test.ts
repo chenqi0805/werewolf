@@ -5,6 +5,7 @@ import {
   connectAll,
   createRoom,
   joinRoom,
+  leaveRoom,
   startRoom,
   startServer,
   stopServer,
@@ -152,5 +153,51 @@ describe('room:invite over real sockets', () => {
       error: 'GAME_RUNNING',
     });
     expect(sendImpl).toHaveBeenCalledTimes(1);
+  }, 15000);
+
+  it('gives a freed seat a fresh budget: exhaust, quit, rejoin, send', async () => {
+    const sendImpl = vi.fn(async () => {});
+    const rig = await freshRig(undefined, {
+      invites: {
+        baseUrl: 'https://werewolf.example',
+        from: 'a@b.c',
+        sendImpl,
+        maxInvitesPerLobby: 1,
+      },
+    });
+    const creator = await connect(rig);
+    const { roomCode } = await createRoom(creator.client);
+    const joinerB = await connect(rig);
+    await joinRoom(joinerB.client, roomCode); // seat 2
+    const joinerC = await connect(rig);
+    await joinRoom(joinerC.client, roomCode); // seat 3
+    await waitFor(() => rig.recs.every((r) => r.latest !== null));
+
+    // Both seats spend their lobby budgets (1/1 each) while the room is
+    // joinable; seat 3 then quits through the real room:leave path — the
+    // gateway frees the seat and its budget with it.
+    const seatThree = rig.clients[2];
+    if (!seatThree) throw new Error('no seat-3 client');
+    const creatorClient = rig.clients[0];
+    if (!creatorClient) throw new Error('no creator client');
+    expect(await invite(creatorClient, 'creator@example.com')).toEqual({ ok: true });
+    expect(await invite(seatThree, 'first@example.com')).toEqual({ ok: true });
+    expect(await invite(seatThree, 'second@example.com')).toEqual({
+      error: 'INVITE_RATE_LIMITED',
+    });
+    await leaveRoom(seatThree);
+
+    // A new player takes the freed seat 3 and their first invite sends —
+    // the spent budget belonged to the previous occupant, not the seat.
+    const next = await connect(rig);
+    const ack = await joinRoom(next.client, roomCode);
+    if ('spectator' in ack) throw new Error('unexpected spectator join');
+    expect(ack.seat).toBe(3);
+    expect(await invite(next.client, 'fresh@example.com')).toEqual({ ok: true });
+    // Seat 1's spent budget was untouched by the seat-3 clear.
+    expect(await invite(creatorClient, 'again@example.com')).toEqual({
+      error: 'INVITE_RATE_LIMITED',
+    });
+    expect(sendImpl).toHaveBeenCalledTimes(3);
   }, 15000);
 });

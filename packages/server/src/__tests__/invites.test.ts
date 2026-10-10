@@ -192,7 +192,7 @@ describe('attachInvites', () => {
   it('acks INVITE_UNAVAILABLE when no sender is configured, without sending', async () => {
     const room = lobbyWithTwo();
     const server = new FakeInviteServer();
-    expect(attachInvites(server, registryOf(room))).toBe(false); // the lobby hides the affordance
+    expect(attachInvites(server, registryOf(room)).available).toBe(false); // the lobby hides the affordance
     const socket = new FakeInviteSocket();
     bind(socket, room.code, 1);
     server.connect(socket);
@@ -351,13 +351,13 @@ describe('attachInvites', () => {
         configured,
         registryOf(room),
         inviteOpts(async () => {}),
-      ),
+      ).available,
     ).toBe(true);
     const bare = new FakeInviteServer();
-    expect(attachInvites(bare, registryOf(room))).toBe(false);
-    expect(attachInvites(bare, registryOf(room), { baseUrl: 'https://x', from: 'a@b.c' })).toBe(
-      false,
-    ); // base URL alone is not a sender
+    expect(attachInvites(bare, registryOf(room)).available).toBe(false);
+    expect(
+      attachInvites(bare, registryOf(room), { baseUrl: 'https://x', from: 'a@b.c' }).available,
+    ).toBe(false); // base URL alone is not a sender
   });
 });
 
@@ -377,5 +377,31 @@ describe('room:invite phase gate and seat budgets', () => {
     // INVITE_RATE_LIMITED if the budget were consulted first.
     expect(await socket.invite('other@example.com')).toEqual({ error: 'GAME_RUNNING' });
     expect(sendImpl).toHaveBeenCalledTimes(1); // no send left the lobby
+  });
+
+  it('gives a freed seat a fresh budget: clearSeatBudget on quit, rejoin, send', async () => {
+    const room = lobbyWithTwo();
+    room.join(); // seat 3
+    const sendImpl = vi.fn(async () => {});
+    const server = new FakeInviteServer();
+    const attachment = attachInvites(
+      server,
+      registryOf(room),
+      inviteOpts(sendImpl, { maxInvitesPerLobby: 1 }),
+    );
+    const first = new FakeInviteSocket();
+    bind(first, room.code, 3);
+    server.connect(first);
+    expect(await first.invite('a@example.com')).toEqual({ ok: true });
+    expect(await first.invite('b@example.com')).toEqual({ error: 'INVITE_RATE_LIMITED' });
+    // The gateway frees the seat on leave/removeBot and clears that seat's
+    // budget — the budget belongs to the occupant, not the seat number.
+    room.leave(3);
+    attachment.clearSeatBudget(room.code, 3);
+    const second = new FakeInviteSocket();
+    bind(second, room.code, 3);
+    server.connect(second);
+    expect(await second.invite('c@example.com')).toEqual({ ok: true });
+    expect(sendImpl).toHaveBeenCalledTimes(2);
   });
 });
