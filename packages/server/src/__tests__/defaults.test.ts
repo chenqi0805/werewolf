@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GameAction } from '@werewolf/engine';
-import { clockKey, defaultActionsFor } from '../defaults';
+import { DEFAULT_TIMERS, clockKey, defaultActionsFor } from '../defaults';
 import { fixedRoom } from './fixtures';
 import * as drv from './drivers';
 
@@ -83,6 +83,20 @@ describe('defaultActionsFor', () => {
     if (actions[0]?.type !== 'SET_SPEECH_DIRECTION') return; // narrowed above
     expect(actions[0].actor).toBe(9);
     expect(actions[0].direction).toBe('cw');
+  });
+});
+
+describe('DEFAULT_TIMERS', () => {
+  it('gives the night steps longer deliberation clocks, day clocks untouched', () => {
+    expect(DEFAULT_TIMERS['night:wolf']).toBe(60_000);
+    expect(DEFAULT_TIMERS['night:witch']).toBe(60_000);
+    expect(DEFAULT_TIMERS['night:seer']).toBe(45_000);
+    // Scope guard: only the night keys moved — day pacing stays standard.
+    expect(DEFAULT_TIMERS['sheriff-signup']).toBe(20_000);
+    expect(DEFAULT_TIMERS.speech).toBe(75_000);
+    expect(DEFAULT_TIMERS['exile-vote']).toBe(45_000);
+    expect(DEFAULT_TIMERS['hunter-shot']).toBe(20_000);
+    expect(DEFAULT_TIMERS['badge-pass']).toBe(15_000);
   });
 });
 
