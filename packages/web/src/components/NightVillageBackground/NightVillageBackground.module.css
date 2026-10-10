@@ -1,0 +1,25 @@
+/* Decorative art layer beneath the game board. Sits inside the host screen's
+   stacking context (`.scr-page--village`) so panels always paint above it. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  /* The art's deep-ink floor — no light flash before the image decodes. */
+  background: var(--village-backdrop-base);
+}
+
+.image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--village-backdrop-scrim);
+}

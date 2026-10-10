@@ -23,6 +23,7 @@ import {
   SeatPicker,
   DestructControl,
   GuardPad,
+  NightVillageBackground,
   SeerPad,
   SpectatorView,
   SpeechHistory,
@@ -119,7 +120,8 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
 
   if (seat === null) {
     return (
-      <main className="scr-page">
+      <main className="scr-page scr-page--village">
+        <NightVillageBackground />
         <section className="scr-panel">
           <span className="scr-code">{roomCode}</span>
           <SpectatorView
@@ -153,7 +155,8 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
   }
 
   return (
-    <main className="scr-page">
+    <main className="scr-page scr-page--village">
+      <NightVillageBackground />
       <section className="scr-panel">
         <div className="scr-row scr-row--spread">
           <div className="scr-row">
