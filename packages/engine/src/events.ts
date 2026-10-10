@@ -11,6 +11,15 @@ export interface TallyRow {
   votes: number;
 }
 
+/** One voter's ballot, revealed with the tally. */
+export interface TallyBallot {
+  voter: Seat;
+  /** `null` = 弃票/空票. */
+  target: Seat | null;
+  /** 1, or 1.5 with the badge — the same weight the count used. */
+  weight: number;
+}
+
 /**
  * Append-only audit trail. The log is the replay source: applying the same
  * action sequence from `createGame` reproduces the same states and events.
@@ -44,8 +53,20 @@ export type GameEvent =
   | { type: 'SHERIFF_ELECTED'; seat: Seat }
   | { type: 'NO_SHERIFF' }
   | { type: 'EXILE_VOTE_CAST'; actor: Seat; target: Seat | null }
-  /** Hidden until the tally; totals are weighted (sheriff 1.5). */
-  | { type: 'VOTE_TALLY'; kind: 'sheriff' | 'exile'; counts: TallyRow[] }
+  /**
+   * Hidden until the close; totals are weighted (sheriff 1.5). The tally
+   * publishes the full per-voter reveal at once — nothing ballot-shaped
+   * exists in the protocol before this moment.
+   */
+  | {
+      type: 'VOTE_TALLY';
+      kind: 'sheriff' | 'exile';
+      /** True when this tally closes a PK revote (from VoteState.revote). */
+      revote: boolean;
+      counts: TallyRow[];
+      /** The full ballot reveal, voter-seat ascending, abstentions included. */
+      ballots: TallyBallot[];
+    }
   | {
       type: 'SPEECH_MADE';
       seat: Seat;

@@ -1,6 +1,6 @@
 import type { PostgameReply } from '@werewolf/server';
 
-import type { PlayerPostgameStat, SpeechRecord, SeatView, VoteTally } from '../types';
+import type { PlayerPostgameStat, SpeechRecord, SeatView, VoteRound, VoteTally } from '../types';
 
 let nextId = 0;
 
@@ -350,4 +350,107 @@ export function samplePostgameReply(): PostgameReply {
       },
     ],
   };
+}
+
+/** Ballot triple [voter, target|null, weight=1], voter-ascending like the engine emits. */
+function ballotsOf(entries: Array<[number, number | null, number?]>): VoteRound['ballots'] {
+  return entries.map(([voter, target, weight = 1]) => ({ voter, target, weight }));
+}
+
+/**
+ * Four coherent rounds from one classic-board game: the day-1 election
+ * (9号 elected), the day-1 exile that flips the unrevealed idiot (12号),
+ * the day-2 exile tie that goes to PK, and the PK revote tying again into
+ * a void day. Badge on 9号 (1.5); 12号 stopped voting after the flip;
+ * 8号 died on night 2. Covers every round shape the panel renders.
+ */
+export function sampleVoteRounds(): VoteRound[] {
+  return [
+    {
+      kind: 'sheriff',
+      day: 1,
+      revote: false,
+      counts: [
+        { seat: 9, votes: 8 },
+        { seat: null, votes: 1 },
+      ],
+      ballots: ballotsOf([
+        [1, 9],
+        [2, 9],
+        [3, 9],
+        [4, 9],
+        [6, 9],
+        [7, 9],
+        [8, 9],
+        [11, 9],
+        [12, null],
+      ]),
+      outcome: { kind: 'elected', seat: 9 },
+    },
+    {
+      kind: 'exile',
+      day: 1,
+      revote: false,
+      counts: [
+        { seat: 12, votes: 10.5 },
+        { seat: 3, votes: 1 },
+      ],
+      ballots: ballotsOf([
+        [1, 12],
+        [2, 12],
+        [3, 12],
+        [4, 12],
+        [6, 12],
+        [7, 12],
+        [8, 12],
+        [9, 12, 1.5],
+        [10, 12],
+        [11, 12],
+        [12, 3],
+      ]),
+      outcome: { kind: 'idiot-revealed', seat: 12 },
+    },
+    {
+      kind: 'exile',
+      day: 2,
+      revote: false,
+      counts: [
+        { seat: 6, votes: 3 },
+        { seat: 7, votes: 3 },
+        { seat: null, votes: 3.5 },
+      ],
+      ballots: ballotsOf([
+        [1, 6],
+        [2, 7],
+        [3, 6],
+        [4, 7],
+        [6, null],
+        [7, null],
+        [9, null, 1.5],
+        [10, 6],
+        [11, 7],
+      ]),
+      outcome: { kind: 'pk' },
+    },
+    {
+      kind: 'exile',
+      day: 2,
+      revote: true,
+      counts: [
+        { seat: 6, votes: 3 },
+        { seat: 7, votes: 3 },
+        { seat: null, votes: 1.5 },
+      ],
+      ballots: ballotsOf([
+        [1, 6],
+        [2, 7],
+        [3, 6],
+        [4, 7],
+        [9, null, 1.5],
+        [10, 6],
+        [11, 7],
+      ]),
+      outcome: { kind: 'void' },
+    },
+  ];
 }

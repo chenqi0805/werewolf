@@ -1,4 +1,4 @@
-import type { TallyRow } from './events';
+import type { TallyBallot, TallyRow } from './events';
 import { getPlayer } from './state';
 import type { GameState } from './state';
 import type { PlayerState, Seat } from './types';
@@ -6,6 +6,23 @@ import type { PlayerState, Seat } from './types';
 /** Vote weight: the sheriff badge counts 1.5 in exile votes while held. */
 export function voteWeight(p: PlayerState): number {
   return p.hasBadge ? 1.5 : 1;
+}
+
+/**
+ * Full ballot reveal: every cast vote, voter-seat ascending, weights
+ * attached. The caller emits it inside VOTE_TALLY — never before the close.
+ */
+export function tallyBallots(
+  state: GameState,
+  votes: Partial<Record<Seat, Seat | null>>,
+): TallyBallot[] {
+  return Object.keys(votes)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((voter) => {
+      const target = votes[voter];
+      return { voter, target: target ?? null, weight: voteWeight(getPlayer(state, voter)) };
+    });
 }
 
 /**

@@ -29,6 +29,8 @@ export { DayLog } from './DayLog/DayLog';
 export type { DayLogProps } from './DayLog/DayLog';
 export { SpeechHistory } from './SpeechHistory/SpeechHistory';
 export type { SpeechHistoryProps } from './SpeechHistory/SpeechHistory';
+export { VoteHistoryPanel } from './VoteHistoryPanel/VoteHistoryPanel';
+export type { VoteHistoryPanelProps } from './VoteHistoryPanel/VoteHistoryPanel';
 export { GameOverReveal } from './GameOverReveal/GameOverReveal';
 export type { GameOverRevealProps } from './GameOverReveal/GameOverReveal';
 export { PostgameReview } from './PostgameReview/PostgameReview';

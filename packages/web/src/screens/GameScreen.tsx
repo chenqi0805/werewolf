@@ -14,6 +14,7 @@ import {
   speakingSeatOf,
   speechByDayOf,
   speechMessagesOf,
+  voteRoundsOf,
 } from '../client/adapters';
 import { useVoiceSpeech } from '../client/useVoiceSpeech';
 import { createVoicePlayer, type VoicePlayer } from '../client/voicePlayer';
@@ -30,6 +31,7 @@ import {
   SpeechHistory,
   SpeechPanel,
   StrategyPanel,
+  VoteHistoryPanel,
   VotePad,
   VoiceControls,
   WitchPad,
@@ -85,6 +87,7 @@ export function GameScreen({ view, roomCode, send, socket, onExit }: GameScreenP
   const seats: SeatView[] = seatViewsOf(view);
   const entries = logToEntries(view.log, view.board);
   const speechGroups = speechByDayOf(view);
+  const voteRounds = voteRoundsOf(view.log);
   const { you } = view;
   const step = view.step;
   const [showTutorial, setShowTutorial] = useState(false);
@@ -144,6 +147,7 @@ export function GameScreen({ view, roomCode, send, socket, onExit }: GameScreenP
           />
           <DayLog entries={entries} />
           <SpeechHistory groups={speechGroups} />
+          <VoteHistoryPanel rounds={voteRounds} />
         </section>
       </main>
     );
@@ -191,6 +195,7 @@ export function GameScreen({ view, roomCode, send, socket, onExit }: GameScreenP
         <SeatGrid seats={seats} />
         <DayLog entries={entries} />
         <SpeechHistory groups={speechGroups} />
+        <VoteHistoryPanel rounds={voteRounds} />
       </section>
 
       {step.kind !== 'game-over' && (

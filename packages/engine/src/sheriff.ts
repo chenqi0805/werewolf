@@ -5,7 +5,7 @@ import { enterDawn } from './resolution';
 import type { GameState, PKState } from './state';
 import { getPlayer, livingPlayers, requireVote } from './state';
 import type { Seat } from './types';
-import { plurality, tallyRows, tallyVotes } from './votes';
+import { plurality, tallyBallots, tallyRows, tallyVotes } from './votes';
 
 /**
  * 警长竞选 — day 1, before night deaths are announced.
@@ -132,7 +132,13 @@ export function handleSheriffVote(
 export function resolveSheriffVote(state: GameState, events: GameEvent[], revote: boolean): void {
   const vote = requireVote(state, 'sheriff');
   const { counts, abstains } = tallyVotes(state, vote.votes);
-  events.push({ type: 'VOTE_TALLY', kind: 'sheriff', counts: tallyRows(counts, abstains) });
+  events.push({
+    type: 'VOTE_TALLY',
+    kind: 'sheriff',
+    revote: vote.revote,
+    counts: tallyRows(counts, abstains),
+    ballots: tallyBallots(state, vote.votes),
+  });
   const result = plurality(counts);
   state.vote = null;
   if (result.winner !== null) {

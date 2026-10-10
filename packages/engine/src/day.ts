@@ -5,7 +5,7 @@ import { afterDawn, applyDeath, drainResolution, enterNight, enterSpeech } from 
 import type { GameState } from './state';
 import { getPlayer, livingPlayers, requireLivingTarget, requireVote } from './state';
 import { canVote, type Phase, type Seat } from './types';
-import { plurality, tallyRows, tallyVotes } from './votes';
+import { plurality, tallyBallots, tallyRows, tallyVotes } from './votes';
 
 // — dawn ————————————————————————————————————————————————————————————————
 
@@ -200,7 +200,13 @@ export function handleExileVote(
 export function resolveExileVote(state: GameState, events: GameEvent[], revote: boolean): void {
   const vote = requireVote(state, 'exile');
   const { counts, abstains } = tallyVotes(state, vote.votes);
-  events.push({ type: 'VOTE_TALLY', kind: 'exile', counts: tallyRows(counts, abstains) });
+  events.push({
+    type: 'VOTE_TALLY',
+    kind: 'exile',
+    revote: vote.revote,
+    counts: tallyRows(counts, abstains),
+    ballots: tallyBallots(state, vote.votes),
+  });
   const result = plurality(counts);
   state.vote = null;
   if (result.winner !== null) {
