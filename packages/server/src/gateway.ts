@@ -392,17 +392,29 @@ export function attachGateway(
       // that is not a registry id is rejected before a room is minted.
       const wire = (payload ?? {}) as { board?: unknown; name?: unknown };
       const requested = wire.board;
-      if (requested !== undefined && (typeof requested !== 'string' || !(requested in BOARDS))) {
+      // Own-property check: `in` walks the prototype chain, so a board id
+      // like 'toString' used to slip past this guard and crash the process
+      // inside shuffledDeck.
+      if (
+        requested !== undefined &&
+        (typeof requested !== 'string' || !Object.hasOwn(BOARDS, requested))
+      ) {
         ack({ error: 'INVALID_BOARD' });
         return;
       }
-      const board = (requested as BoardId | undefined) ?? 'classic';
-      const name = normalizeName(wire.name);
-      const room = registry.create(board);
-      const { seat, sessionToken } = room.join(name);
-      bind(socket, room.code, seat);
-      ack({ roomCode: room.code, seat, sessionToken, board, name });
-      broadcastOccupancy(room);
+      try {
+        const board = (requested as BoardId | undefined) ?? 'classic';
+        const name = normalizeName(wire.name);
+        const room = registry.create(board);
+        const { seat, sessionToken } = room.join(name);
+        bind(socket, room.code, seat);
+        ack({ roomCode: room.code, seat, sessionToken, board, name });
+        broadcastOccupancy(room);
+      } catch (error) {
+        // Same contract as room:join — a store failure (or any throw) is one
+        // socket's error ack, never a process exit.
+        ack({ error: errorPayload(error).code });
+      }
     });
 
     socket.on('room:join', (...args: [string, string | undefined, Ack<JoinAck>]) => {
