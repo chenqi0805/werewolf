@@ -14,6 +14,8 @@ export { SeerPad } from './SeerPad/SeerPad';
 export type { SeerPadProps } from './SeerPad/SeerPad';
 export { DestructControl } from './DestructControl/DestructControl';
 export type { DestructControlProps } from './DestructControl/DestructControl';
+export { ExplodeControl } from './ExplodeControl/ExplodeControl';
+export type { ExplodeControlProps } from './ExplodeControl/ExplodeControl';
 export { GuardPad } from './GuardPad/GuardPad';
 export type { GuardPadProps, GuardPadOptions } from './GuardPad/GuardPad';
 export { NightVillageBackground } from './NightVillageBackground/NightVillageBackground';

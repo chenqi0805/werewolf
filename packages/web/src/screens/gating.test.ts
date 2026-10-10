@@ -9,6 +9,7 @@ import {
   directionNeeded,
   formatCountdown,
   destructState,
+  explodeState,
   guardOptionsOf,
   guardTargets,
   hunterShotState,
@@ -211,6 +212,55 @@ describe('destructState', () => {
       actor: 4,
       target: 7,
     });
+  });
+});
+
+describe('explodeState', () => {
+  const wolfView = (step: PlayerView['step'], overrides: Partial<PlayerView['you']> = {}) =>
+    view({
+      step,
+      you: you({ role: 'werewolf', seat: 4, ...overrides }),
+      players: [row(1), row(2), row(3, { alive: false }), row(4), row(5)],
+    });
+
+  it('opens for a living plain wolf in every voice-live window', () => {
+    expect(explodeState(wolfView({ kind: 'sheriff-signup', candidates: [4] })).active).toBe(true);
+    expect(explodeState(wolfView({ kind: 'sheriff-speech', queue: [4], cursor: 0 })).active).toBe(
+      true,
+    );
+    expect(explodeState(wolfView({ kind: 'speech', order: [4, 5], cursor: 0 })).active).toBe(true);
+    expect(explodeState(wolfView({ kind: 'pk-speech', tied: [4, 5], cursor: 0 })).active).toBe(
+      true,
+    );
+  });
+
+  it('stays shut outside the windows — ballots and night are never interrupted', () => {
+    expect(explodeState(wolfView({ kind: 'night', step: 'wolf' })).active).toBe(false);
+    expect(explodeState(wolfView({ kind: 'sheriff-vote', electorate: [1, 2] })).active).toBe(false);
+    expect(explodeState(wolfView({ kind: 'exile-vote', electorate: [1, 2] })).active).toBe(false);
+    expect(
+      explodeState(wolfView({ kind: 'pk-vote', electorate: [1, 2], voteKind: 'exile' })).active,
+    ).toBe(false);
+    expect(explodeState(wolfView({ kind: 'dawn-announce', remaining: 1 })).active).toBe(false);
+    expect(explodeState(wolfView({ kind: 'game-over' })).active).toBe(false);
+  });
+
+  it('stays shut for the 白狼王, other roles, and dead or seatless wolves', () => {
+    const speaking: PlayerView['step'] = { kind: 'speech', order: [4], cursor: 0 };
+    // The king's destruct is targeted and separate — he never plain-explodes.
+    expect(
+      explodeState(view({ step: speaking, you: you({ role: 'white_wolf_king', seat: 4 }) })).active,
+    ).toBe(false);
+    expect(explodeState(view({ step: speaking, you: you({ role: 'seer', seat: 4 }) })).active).toBe(
+      false,
+    );
+    expect(explodeState(view({ step: speaking, you: you({ role: null, seat: 4 }) })).active).toBe(
+      false,
+    );
+    expect(explodeState(wolfView(speaking, { alive: false })).active).toBe(false);
+    expect(
+      explodeState(view({ step: speaking, you: you({ role: 'werewolf', seat: null }) })).active,
+    ).toBe(false);
   });
 });
 

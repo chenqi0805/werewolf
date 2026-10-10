@@ -126,6 +126,19 @@ describe('logToEntries', () => {
     expect(exiled?.day).toBe(1);
   });
 
+  it('logs a plain-wolf explode as a death line in the king-destruct style', () => {
+    const log: GameEvent[] = [
+      { type: 'NIGHT_BEGAN', dayNumber: 1 },
+      { type: 'DAY_BROKE', dayNumber: 1 },
+      { type: 'WOLF_EXPLODED', seat: 9 },
+    ];
+    expect(logToEntries(log).map((e) => [e.kind, e.text])).toEqual([
+      ['system', '第 1 夜来临'],
+      ['system', '天亮了'],
+      ['death', '9号自爆，白天结束'],
+    ]);
+  });
+
   it('renders death announcements on their night', () => {
     const log: GameEvent[] = [
       { type: 'NIGHT_BEGAN', dayNumber: 2 },

@@ -216,6 +216,30 @@ export function destructState(view: PlayerView): DestructState {
   return { active: true, targets: livingOthersOf(view) };
 }
 
+/** The plain wolf's 自爆 window state — self-directed, so no target list. */
+export interface ExplodeState {
+  active: boolean;
+}
+
+/**
+ * A plain wolf may reveal and die while a voice is live: the signup window
+ * and every speech phase, mirroring the engine's EXPLODE_WINDOWS (ballots
+ * are simultaneous and never interrupted). The 白狼王 keeps his targeted
+ * destruct and cannot use this — his role fails the gate, matching the
+ * engine's NOT_YOUR_TURN. Self-directed, so no new view fields: the
+ * fog-of-war audit stays untouched.
+ */
+export function explodeState(view: PlayerView): ExplodeState {
+  const step = stepOf(view);
+  const { seat, alive, role } = view.you;
+  const windowOpen =
+    step.kind === 'sheriff-signup' ||
+    step.kind === 'sheriff-speech' ||
+    step.kind === 'speech' ||
+    step.kind === 'pk-speech';
+  return { active: seat !== null && alive && role === 'werewolf' && windowOpen };
+}
+
 /** Is the viewer's hunter shot window open, and who can be hit? */
 export function hunterShotState(view: PlayerView): HunterShotState {
   const step = stepOf(view);
