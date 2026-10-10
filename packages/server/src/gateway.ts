@@ -289,7 +289,10 @@ export function attachGateway(
     if (error instanceof GameError || error instanceof RoomError) {
       return { code: error.code, message: error.message };
     }
-    return { code: 'INTERNAL', message: error instanceof Error ? error.message : String(error) };
+    // F5: unexpected errors can embed filesystem or SQLite paths — clients
+    // get a generic payload; the full detail stays in the server log.
+    console.error('[werewolf] unexpected gateway error:', error);
+    return { code: 'INTERNAL', message: 'Internal error' };
   }
 
   /** Per-IP limiter key: the Socket.IO handshake address. */
