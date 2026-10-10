@@ -169,6 +169,7 @@ describe('restore respawn', () => {
       expect(rig2.app.botManager.runnerCount(code)).toBe(1); // a bad token would have retired it
       const { client, rec } = await connect(rig2);
       const ack = await joinRoom(client, code);
+      if ('spectator' in ack) throw new Error('unexpected spectator join');
       expect(ack.seat).toBe(3); // seat 1 (creator) and seat 2 (bot) are held
       await waitFor(() => rec.latest !== null);
       const row = rec.latest?.players.find((p) => p.seat === 2);

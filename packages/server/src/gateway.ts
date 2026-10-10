@@ -582,14 +582,15 @@ export interface AppHandle {
  * rooms, seat tokens, speeches, votes, and running clocks survive restarts.
  * Without a dbPath the registry is in-memory (v1 behavior).
  */
-export function createApp(
-  opts?: GatewayOptions & {
-    httpServer?: HttpServer;
-    dbPath?: string;
-    /** Bot brain factory — see BotManager. Omit for the scripted brain. */
-    botStrategyFactory?: () => BotStrategy;
-  },
-): AppHandle {
+/** createApp's full options: attach options plus the composition knobs. */
+export interface AppOptions extends GatewayOptions {
+  httpServer?: HttpServer;
+  dbPath?: string;
+  /** Bot brain factory — see BotManager. Omit for the scripted brain. */
+  botStrategyFactory?: () => BotStrategy;
+}
+
+export function createApp(opts?: AppOptions): AppHandle {
   const httpServer = opts?.httpServer ?? createServer();
   const io: GatewayServer = new Server(httpServer, {
     cors: { origin: true, credentials: true },

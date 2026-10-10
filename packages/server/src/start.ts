@@ -1,5 +1,5 @@
 import { createApp } from './gateway';
-import type { GatewayOptions, TimerOverrides } from './gateway';
+import type { AppOptions, TimerOverrides } from './gateway';
 import type { AssistantOptions } from './assistant';
 import type { VoiceOptions } from './voice';
 import type { BotStrategy } from '@werewolf/bots';
@@ -21,7 +21,7 @@ const botBrains = parseBotBrainEnv();
 // votes, and clocks survive a restart. WEREWOLF_DB_PATH relocates it.
 const dbPath = process.env.WEREWOLF_DB_PATH ?? resolve('data', 'werewolf.db');
 
-const opts: GatewayOptions = {};
+const opts: AppOptions = {};
 if (timers !== null) opts.timers = timers;
 if (voice !== null) opts.voice = voice;
 if (assistant !== null) {
