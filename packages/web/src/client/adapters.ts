@@ -108,6 +108,8 @@ function logText(event: GameEvent): string | null {
       return '游戏开始：12人标准局（4狼·4民·预言家·女巫·猎人·白痴）';
     case 'WHITE_WOLF_KING_DESTRUCTED':
       return `${seatLabel(event.actor)}自爆，带走了${seatLabel(event.target)}`;
+    case 'WOLF_EXPLODED':
+      return `${seatLabel(event.seat)}自爆，白天结束`;
     case 'NIGHT_BEGAN':
       return `第 ${event.dayNumber} 夜来临`;
     case 'DAY_BROKE':
@@ -170,6 +172,7 @@ function logKind(event: GameEvent): LogKind {
     case 'PLAYER_EXILED':
     case 'HUNTER_SHOT':
     case 'WHITE_WOLF_KING_DESTRUCTED':
+    case 'WOLF_EXPLODED':
       return 'death';
     case 'VOTE_TALLY':
       return 'vote';

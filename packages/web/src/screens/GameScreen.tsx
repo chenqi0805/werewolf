@@ -22,6 +22,7 @@ import {
   SeatGrid,
   SeatPicker,
   DestructControl,
+  ExplodeControl,
   GuardPad,
   NightVillageBackground,
   SeerPad,
@@ -42,6 +43,7 @@ import {
   hunterShotState,
   guardTargets,
   destructState,
+  explodeState,
   nightPadKind,
   nightTargets,
   poisonTargets,
@@ -143,6 +145,7 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
   const signup = sheriffSignupState(view);
   const shot = hunterShotState(view);
   const destruct = destructState(view);
+  const explode = explodeState(view);
   const votes = voteContextOf(view);
   const speechKind = speechContextOf(view);
   const strategy = strategyContextOf(view);
@@ -319,6 +322,10 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
 
           {destruct.active && (
             <DestructControl targets={destruct.targets} onDestruct={onPick('destruct')} />
+          )}
+
+          {explode.active && (
+            <ExplodeControl onExplode={() => send({ type: 'WOLF_EXPLODE', actor: seat })} />
           )}
 
           {step.kind === 'badge-pass' && (

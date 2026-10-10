@@ -16,7 +16,7 @@ export const ROLE_META: Record<Role, RoleMeta> = {
     label: '狼人',
     monogram: '狼',
     team: 'wolves',
-    ability: '每晚与同伴共同猎杀一名玩家。',
+    ability: '每晚与同伴共同猎杀一名玩家；白天发言或警长竞选期间可自爆，立即结束白天。',
     accent: '--role-wolf',
   },
   white_wolf_king: {
