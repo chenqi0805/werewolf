@@ -374,12 +374,16 @@ function chipFor(scope: Locator | Page, seat: number): Locator {
   return scope.locator(`${SELECTORS.seatPickerGroup} button[aria-label^="${seat}号"]`);
 }
 
-/** `今晚倒牌：N号` → N, or null on a 空刀 night. */
+/** `今晚倒牌：N号` → N, or null on a 空刀 night (or if the pad vanishes mid-read — retried next tick). */
 async function witchVictim(pad: Locator): Promise<number | null> {
-  const text = (await pad.locator('p').first().textContent()) ?? '';
-  return text.match(/今晚倒牌：(\d+)号/u)?.[1] !== undefined
-    ? Number(text.match(/今晚倒牌：(\d+)号/u)?.[1])
-    : null;
+  let text: string;
+  try {
+    text = (await pad.locator('p').first().textContent({ timeout: 2_000 })) ?? '';
+  } catch {
+    return null; // pad unmounted between probe and read — same race softClick tolerates
+  }
+  const match = text.match(/今晚倒牌：(\d+)号/u);
+  return match?.[1] !== undefined ? Number(match[1]) : null;
 }
 
 /**
@@ -402,11 +406,14 @@ function describe(error: unknown): string {
   return error instanceof Error ? (error.message.split('\n')[0] ?? '') : String(error);
 }
 
-/** Day number from the game screen title; null off the game screen. */
+/** Day number from the game screen title; null off the game screen (title may swap mid-read). */
 async function dayNumberOf(page: Page): Promise<number | null> {
   const title = page.locator('.scr-title').first();
-  if ((await title.count()) === 0) return null;
-  return dayOfTitle(await title.textContent());
+  try {
+    return dayOfTitle(await title.textContent({ timeout: 2_000 }));
+  } catch {
+    return null; // screen swapped (e.g. game-over) between count and read
+  }
 }
 
 /** Winner once seat 1's page shows the reveal; null while the game runs. */
@@ -414,9 +421,13 @@ async function readWinner(page: Page | null): Promise<'wolves' | 'good' | null> 
   if (page === null) return null;
   const reveal = page.locator(SELECTORS.gameOver);
   if (!(await reveal.isVisible())) return null;
-  const text = (await reveal.textContent()) ?? '';
-  for (const [label, side] of Object.entries(WINNER_LABELS)) {
-    if (text.includes(label)) return side;
+  try {
+    const text = (await reveal.textContent({ timeout: 2_000 })) ?? '';
+    for (const [label, side] of Object.entries(WINNER_LABELS)) {
+      if (text.includes(label)) return side;
+    }
+  } catch {
+    // section vanished between isVisible and read — not the winner yet; retried next tick
   }
   return null;
 }
