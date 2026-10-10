@@ -151,7 +151,6 @@ describe('timer expiry survives a persistence-hook failure (SRV-3)', () => {
   }, 20_000);
 });
 
-
 describe('internal errors never leak detail to clients (F5)', () => {
   /** A store failure whose message embeds a database path — the leak F5 closes. */
   const STORE_FAILURE =
