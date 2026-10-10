@@ -444,6 +444,11 @@ export function handleHunterShoot(
   // The shot target dies immediately, with no last words.
   const record = applyDeath(state, action.target, 'shot', events);
   state.resolution?.queue.push(record);
+  // A shot death is a brand-new death: arm the win-check gate. Day-origin
+  // resolutions already carry newDeaths = true, so this is a no-op there —
+  // and on the dawn path it is the difference between GAME_OVER and a
+  // wolfless night no legal action can leave.
+  if (state.resolution) state.resolution.newDeaths = true;
   drainResolution(state, events);
 }
 
