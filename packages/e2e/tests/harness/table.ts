@@ -19,17 +19,26 @@ export interface Table {
   close(): Promise<void>;
 }
 
+export interface OpenTableOptions {
+  /** Board to create with; classic when unset. */
+  board?: 'classic' | 'wolfking';
+  /** Human contexts to seat; the host fills the rest with AI players. */
+  humans?: number;
+}
+
 /**
- * Seats 12 browser contexts at one table: the first page creates a room, the
- * rest join by code, any seated player starts, and every page then reads its
- * own seat number and dealt role off the game screen. The random deal is
- * discovered here — the scripted plans close over the result.
+ * Seats 12 players at one table: the first page creates a room (picking the
+ * board when asked), the rest join by code, AI players fill any remainder,
+ * any seated player starts, and every human page then reads its own seat
+ * number and dealt role off the game screen. The random deal is discovered
+ * here — the scripted plans close over the result.
  */
-export async function openTable(browser: Browser): Promise<Table> {
+export async function openTable(browser: Browser, opts: OpenTableOptions = {}): Promise<Table> {
+  const humans = opts.humans ?? 12;
   const contexts: BrowserContext[] = [];
   const pages: Page[] = [];
   try {
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < humans; i += 1) {
       const context = await browser.newContext();
       const page = await context.newPage();
       await page.goto('/');
@@ -39,6 +48,9 @@ export async function openTable(browser: Browser): Promise<Table> {
 
     // The first page creates; the room code is public lobby data.
     const first = pages[0] as Page;
+    if (opts.board === 'wolfking') {
+      await first.locator(SELECTORS.boardOptionWolfKing).click();
+    }
     await first.locator(SELECTORS.createRoomButton).click();
     await expect(first.locator(SELECTORS.roomCode)).toBeVisible();
     const code = ((await first.locator(SELECTORS.roomCode).textContent()) ?? '').trim();
@@ -47,6 +59,16 @@ export async function openTable(browser: Browser): Promise<Table> {
     for (const page of pages.slice(1)) {
       await page.locator(SELECTORS.roomCodeInput).fill(code);
       await page.locator(SELECTORS.joinRoomButton).click();
+    }
+
+    if (humans < 12) {
+      const addBot = first.locator(SELECTORS.addBotButton);
+      for (let filled = humans; filled < 12; filled += 1) {
+        await addBot.click();
+        await expect(first.locator(SELECTORS.lobbyCount).last()).toHaveText(
+          `${filled + 1}/12 人已入座`,
+        );
+      }
     }
 
     // Every page waits for the full table before anyone starts the game.
@@ -71,8 +93,13 @@ export async function openTable(browser: Browser): Promise<Table> {
     seats.sort((a, b) => a.seat - b.seat);
     expect(
       seats.map((s) => s.seat),
-      'one player per seat',
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      'one human per distinct seat',
+    ).toEqual([...seats.map((s) => s.seat)].sort((a, b) => a - b));
+    expect(new Set(seats.map((s) => s.seat)).size, 'no duplicated seats').toBe(humans);
+    for (const seat of seats) {
+      expect(seat.seat, `seat ${seat.seat} in range`).toBeGreaterThanOrEqual(1);
+      expect(seat.seat, `seat ${seat.seat} in range`).toBeLessThanOrEqual(12);
+    }
 
     const roles = new Map<Seat, Role>(seats.map((s) => [s.seat, s.role]));
     return {

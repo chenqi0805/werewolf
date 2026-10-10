@@ -27,6 +27,10 @@ export interface PlayPlan {
   hunterShot(day: number, targets: number[]): number | null;
   /** Badge handoff; null = 撕毁警徽. */
   badgePass(day: number, targets: number[]): number | null;
+  /** The guard's protection; null = 空守. `banned` is the repeat-banned seat (连守). */
+  guardProtect?(day: number, targets: number[], banned: number | null): number | null;
+  /** The 白狼王's destruct target; null = holds fire. */
+  destruct?(day: number, targets: number[]): number | null;
 }
 
 export interface PlayOptions {
@@ -78,10 +82,15 @@ async function driveSeat(seat: SeatPage, plan: PlayPlan, acted: Set<string>): Pr
   if (day === null) return;
 
   if (await driveWolf(seat, plan, acted, day)) return;
+  if (await driveGuard(seat, plan, acted, day)) return;
   if (await driveWitch(seat, plan, acted, day)) return;
   if (await driveSeer(seat, plan, acted, day)) return;
   if (await driveSignup(seat, plan, acted, day)) return;
   if (await driveDirection(seat, acted, day)) return;
+  // Destruct sits ahead of the speech driver: the speech panel returns true
+  // even when the slot belongs to someone else, which would mask the living
+  // king's window for the whole phase.
+  if (await driveDestruct(seat, plan, acted, day)) return;
   if (await driveSpeech(seat, plan, acted, day)) return;
   if (await driveVote(seat, plan, acted, day)) return;
   if (await driveShot(seat, plan, acted, day)) return;
@@ -107,6 +116,43 @@ async function driveWolf(
   }
   if (!(await softClick(chipFor(pad, target)))) return true;
   if (await softClick(pad.locator('button', { hasText: '确认猎杀' }))) acted.add(fingerprint);
+  return true;
+}
+
+/**
+ * Guard pad: protect the plan's pick (self via the 自守 toggle), or 空守.
+ * The repeat-banned chip renders disabled — it still lists as a target, so
+ * the plan sees it through `banned` and must choose around it.
+ */
+async function driveGuard(
+  seat: SeatPage,
+  plan: PlayPlan,
+  acted: Set<string>,
+  day: number,
+): Promise<boolean> {
+  const pad = seat.page.locator(SELECTORS.guardPad);
+  if (!(await pad.isVisible())) return false;
+  const fingerprint = `guard|${seat.seat}|${day}`;
+  if (acted.has(fingerprint)) return true;
+
+  const targets = await pickerTargets(pad);
+  const bannedChips = await pad.locator('button[aria-pressed][disabled]').all();
+  const banned = bannedChips.length
+    ? (seatOfChipLabel(await bannedChips[0]?.getAttribute('aria-label') ?? null) ?? null)
+    : null;
+
+  const target = plan.guardProtect?.(day, targets, banned) ?? null;
+  let done: boolean;
+  if (target === null) {
+    done = await softClick(pad.locator('button', { hasText: '空守' }));
+  } else if (target === seat.seat) {
+    await softClick(pad.locator('button', { hasText: '自守' }));
+    done = await softClick(pad.locator('button', { hasText: '守护' }));
+  } else {
+    if (!(await softClick(chipFor(pad, target)))) return true;
+    done = await softClick(pad.locator('button', { hasText: '守护' }));
+  }
+  if (done) acted.add(fingerprint);
   return true;
 }
 
@@ -268,6 +314,39 @@ async function driveBadgePass(
       ? await softClick(seat.page.locator(SELECTORS.badgeDestroyButton))
       : await softClick(chipFor(seat.page, target));
   if (done) acted.add(fingerprint);
+  return true;
+}
+
+/**
+ * 白狼王 destruct: arm the flow, then pick and confirm on a later tick.
+ * The fingerprint lands only on confirm (or cancel) so a lost chip click
+ * retries the open flow instead of stalling it armed.
+ */
+async function driveDestruct(
+  seat: SeatPage,
+  plan: PlayPlan,
+  acted: Set<string>,
+  day: number,
+): Promise<boolean> {
+  const section = seat.page.locator(SELECTORS.destructControl);
+  if (!(await section.isVisible())) return false;
+  const fingerprint = `destruct|${seat.seat}|${day}`;
+  if (acted.has(fingerprint)) return true;
+
+  const arm = section.locator('button:text-is("自爆")');
+  if (await arm.count()) {
+    await softClick(arm);
+    return true;
+  }
+  const target = plan.destruct?.(day, await pickerTargets(section)) ?? null;
+  if (target === null) {
+    if (await softClick(section.locator('button', { hasText: '取消' }))) acted.add(fingerprint);
+    return true;
+  }
+  if (!(await softClick(chipFor(section, target)))) return true;
+  if (await softClick(section.locator('button', { hasText: '确认自爆并带走' }))) {
+    acted.add(fingerprint);
+  }
   return true;
 }
 
