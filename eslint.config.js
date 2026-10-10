@@ -10,8 +10,8 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    // The e2e server-runner is plain Node, outside TypeScript's globals.
-    files: ['packages/e2e/scripts/**/*.mjs'],
+    // Package runner scripts are plain Node, outside TypeScript's globals.
+    files: ['packages/*/scripts/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
   {
