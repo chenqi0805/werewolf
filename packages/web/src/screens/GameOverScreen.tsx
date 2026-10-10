@@ -1,9 +1,15 @@
 import type { PlayerView } from '@werewolf/server';
 import type { JSX } from 'react';
 
-import { logToEntries, postgameStatsOf, revealsOf, winSideOf } from '../client/adapters';
+import {
+  logToEntries,
+  postgameStatsOf,
+  revealsOf,
+  voteRoundsOf,
+  winSideOf,
+} from '../client/adapters';
 import { requestPostgameAnalysis, type GameSocket } from '../client/socketClient';
-import { DayLog, GameOverReveal, PostgameReview } from '../components';
+import { DayLog, GameOverReveal, PostgameReview, VoteHistoryPanel } from '../components';
 
 /**
  * End-of-game screen: full reveal, winning side, the complete day log, and
@@ -35,6 +41,7 @@ export function GameOverScreen({
           disabled={!socket}
         />
         <DayLog entries={logToEntries(view.log, view.board)} />
+        <VoteHistoryPanel rounds={voteRoundsOf(view.log)} />
         {onExit && (
           <div className="scr-actions scr-actions--center">
             <button type="button" className="scr-exit" onClick={onExit}>

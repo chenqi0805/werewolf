@@ -9,7 +9,7 @@
 /** Seat number, 1..12. Seat order drives speech and vote order. */
 export type Seat = number;
 
-import type { Role } from '@werewolf/engine';
+import type { Role, TallyBallot, TallyRow } from '@werewolf/engine';
 
 // The role enumeration is the engine registry's — one list, not four.
 // (Web's own `Camp` below is the winner-banner vocabulary — 'wolves' — which
@@ -89,6 +89,34 @@ export interface VoteTally {
   exiled: Seat | null;
   /** Tied vote: nobody is exiled today. */
   voided: boolean;
+}
+
+/** How a resolved vote round ended, from the events after its tally. */
+export type VoteRoundOutcome =
+  | { kind: 'elected'; seat: Seat }
+  | { kind: 'no-sheriff' }
+  | { kind: 'exiled'; seat: Seat }
+  /** First exile lands on the unrevealed idiot: he flips and survives. */
+  | { kind: 'idiot-revealed'; seat: Seat }
+  /** A vote landed on the revealed idiot: nobody is removed. */
+  | { kind: 'blocked-by-idiot'; seat: Seat }
+  /** First-ballot tie: the round continues into PK speeches and a revote. */
+  | { kind: 'pk' }
+  /** Tie stands (revote tie or all abstentions): nothing happens. */
+  | { kind: 'void' };
+
+/** One resolved vote round — its tally's full public reveal. */
+export interface VoteRound {
+  kind: 'sheriff' | 'exile';
+  /** Game day the vote closed on, derived like `datedSpeechOf`. */
+  day: number;
+  /** True when this tally closes a PK revote. */
+  revote: boolean;
+  /** Weighted totals per target, abstentions last. */
+  counts: TallyRow[];
+  /** Full ballot reveal, voter-seat ascending. */
+  ballots: TallyBallot[];
+  outcome: VoteRoundOutcome;
 }
 
 /** Which side won the game. */

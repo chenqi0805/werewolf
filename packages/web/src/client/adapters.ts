@@ -13,6 +13,8 @@ import type {
   SpeechContext,
   SpeechMessage,
   SpeechRecord,
+  VoteRound,
+  VoteRoundOutcome,
   VoteTally,
 } from '../types';
 
@@ -286,8 +288,8 @@ export function speechByDayOf(view: PlayerView): Array<{ day: number; records: S
 
 /**
  * The latest exile tally plus its outcome, reconstructed from the public
- * log (the protocol carries counts, then the exile event — never voters).
- * Returns null until the first exile vote resolves.
+ * log (counts and the full ballot reveal ride VOTE_TALLY; the exile event
+ * follows). Returns null until the first exile vote resolves.
  */
 export function deriveTally(log: readonly GameEvent[]): VoteTally | null {
   for (let index = log.length - 1; index >= 0; index -= 1) {
@@ -302,15 +304,83 @@ export function deriveTally(log: readonly GameEvent[]): VoteTally | null {
     return {
       rows: event.counts.map((count) => ({
         target: count.seat,
-        voterSeats: [],
+        voterSeats: event.ballots
+          .filter((ballot) =>
+            count.seat === null ? ballot.target === null : ballot.target === count.seat,
+          )
+          .map((ballot) => ballot.voter),
         votes: count.votes,
       })),
-      abstainers: [],
+      abstainers: event.ballots
+        .filter((ballot) => ballot.target === null)
+        .map((ballot) => ballot.voter),
       exiled: voided ? null : exiled,
       voided,
     };
   }
   return null;
+}
+
+/** How a resolved round ends: the round-closing event after its tally, before the next same-kind tally. */
+function voteOutcomeOf(
+  log: readonly GameEvent[],
+  from: number,
+  kind: 'sheriff' | 'exile',
+  revote: boolean,
+): VoteRoundOutcome {
+  for (let index = from + 1; index < log.length; index += 1) {
+    const event = log[index];
+    if (event === undefined) break;
+    // The next same-kind tally is this round's PK revote — unless this
+    // round already was the revote, in which case reaching it means the
+    // revote tied and the day voided (no outcome event exists).
+    if (event.type === 'VOTE_TALLY' && event.kind === kind) {
+      return revote ? { kind: 'void' } : { kind: 'pk' };
+    }
+    switch (event.type) {
+      case 'SHERIFF_ELECTED':
+        return { kind: 'elected', seat: event.seat };
+      case 'NO_SHERIFF':
+        return { kind: 'no-sheriff' };
+      case 'PLAYER_EXILED':
+        return { kind: 'exiled', seat: event.seat };
+      case 'IDIOT_REVEALED':
+        return { kind: 'idiot-revealed', seat: event.seat };
+      case 'EXILE_BLOCKED_BY_IDIOT':
+        return { kind: 'blocked-by-idiot', seat: event.seat };
+      default:
+        break;
+    }
+  }
+  return revote ? { kind: 'void' } : { kind: 'pk' };
+}
+
+/**
+ * Every resolved vote round, in log order, walked once off the public log
+ * — the adapter behind the 每轮票形 history. Same day walk as
+ * `datedSpeechOf`; the server has already filtered the list to what this
+ * viewer may see, so alive, dead, and spectator seats derive identical
+ * rounds (the tally and its ballots are public).
+ */
+export function voteRoundsOf(log: readonly GameEvent[]): VoteRound[] {
+  const rounds: VoteRound[] = [];
+  let day = 1;
+  log.forEach((event, index) => {
+    if (event.type === 'NIGHT_BEGAN' || event.type === 'DAY_BROKE') {
+      day = event.dayNumber;
+      return;
+    }
+    if (event.type !== 'VOTE_TALLY') return;
+    rounds.push({
+      kind: event.kind,
+      day,
+      revote: event.revote,
+      counts: event.counts,
+      ballots: event.ballots,
+      outcome: voteOutcomeOf(log, index, event.kind, event.revote),
+    });
+  });
+  return rounds;
 }
 
 /** Full reveal rows for the game-over screen. */
@@ -347,10 +417,11 @@ function deathTextOf(death: { day: number; cause: PublicDeathCause }): string {
 
 /**
  * The deterministic per-seat 复盘 stats, walked once off the view's log plus
- * the game-over reveal rows. The client log never carries server-only events
- * (individual ballots, exact night-death causes), so this states only what
- * the table saw: votes received come from the public tallies, votes cast
- * stay 0, and night deaths read 出局 rather than claiming a cause.
+ * the game-over reveal rows. The client log never carries server-only
+ * events (individual ballot casts, exact night-death causes), so this
+ * states only what the table saw: votes cast come from the public ballot
+ * reveals, votes received from the public tallies, and night deaths read
+ * 出局 rather than claiming a cause.
  */
 export function postgameStatsOf(view: PlayerView): PlayerPostgameStat[] {
   const stats = new Map<Seat, PlayerPostgameStat>();
@@ -398,6 +469,10 @@ export function postgameStatsOf(view: PlayerView): PlayerPostgameStat[] {
         if (!deaths.has(event.target)) deaths.set(event.target, { day, cause: 'destruct' });
         break;
       case 'VOTE_TALLY': {
+        for (const ballot of event.ballots) {
+          const voter = stats.get(ballot.voter);
+          if (voter) voter.votesCast += 1;
+        }
         if (event.kind !== 'exile') break;
         for (const count of event.counts) {
           if (count.seat === null) continue;

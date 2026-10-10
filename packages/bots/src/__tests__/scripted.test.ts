@@ -510,7 +510,7 @@ describe('rng and speech helpers', () => {
   it('recentSpeechOf takes the last N speech texts oldest first', () => {
     const log: GameEvent[] = [
       { type: 'SPEECH_MADE', seat: 1, text: 'one', context: 'speech' },
-      { type: 'VOTE_TALLY', kind: 'exile', counts: [] },
+      { type: 'VOTE_TALLY', kind: 'exile', revote: false, counts: [], ballots: [] },
       { type: 'SPEECH_MADE', seat: 2, text: 'two', context: 'speech' },
       { type: 'SPEECH_MADE', seat: 3, text: 'three', context: 'speech' },
     ];

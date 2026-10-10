@@ -15,6 +15,7 @@ import {
   speechByDayOf,
   speechMessagesOf,
   speakingSeatOf,
+  voteRoundsOf,
   winSideOf,
 } from './adapters';
 
@@ -265,19 +266,29 @@ describe('deriveTally', () => {
       {
         type: 'VOTE_TALLY',
         kind: 'exile',
+        revote: false,
         counts: [
           { seat: 7, votes: 5 },
           { seat: null, votes: 3 },
+        ],
+        ballots: [
+          { voter: 1, target: null, weight: 1 },
+          { voter: 2, target: null, weight: 1 },
+          { voter: 3, target: null, weight: 1 },
+          { voter: 4, target: 7, weight: 1 },
+          { voter: 5, target: 7, weight: 1 },
+          { voter: 6, target: 7, weight: 1 },
+          { voter: 8, target: 7, weight: 1 },
         ],
       },
       { type: 'PLAYER_EXILED', seat: 7 },
     ];
     expect(deriveTally(log)).toEqual({
       rows: [
-        { target: 7, voterSeats: [], votes: 5 },
-        { target: null, voterSeats: [], votes: 3 },
+        { target: 7, voterSeats: [4, 5, 6, 8], votes: 5 },
+        { target: null, voterSeats: [1, 2, 3], votes: 3 },
       ],
-      abstainers: [],
+      abstainers: [1, 2, 3],
       exiled: 7,
       voided: false,
     });
@@ -285,7 +296,13 @@ describe('deriveTally', () => {
 
   it('marks the vote voided when the idiot blocked it', () => {
     const log: GameEvent[] = [
-      { type: 'VOTE_TALLY', kind: 'exile', counts: [{ seat: 9, votes: 12 }] },
+      {
+        type: 'VOTE_TALLY',
+        kind: 'exile',
+        revote: false,
+        counts: [{ seat: 9, votes: 12 }],
+        ballots: [{ voter: 1, target: 9, weight: 1 }],
+      },
       { type: 'EXILE_BLOCKED_BY_IDIOT', seat: 9 },
     ];
     const tally = deriveTally(log);
@@ -293,7 +310,118 @@ describe('deriveTally', () => {
   });
 
   it('ignores sheriff tallies', () => {
-    expect(deriveTally([{ type: 'VOTE_TALLY', kind: 'sheriff', counts: [] }])).toBeNull();
+    expect(
+      deriveTally([
+        { type: 'VOTE_TALLY', kind: 'sheriff', revote: false, counts: [], ballots: [] },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe('voteRoundsOf', () => {
+  it('returns [] before any tally resolves', () => {
+    expect(voteRoundsOf([])).toEqual([]);
+    expect(voteRoundsOf([{ type: 'NIGHT_BEGAN', dayNumber: 1 }])).toEqual([]);
+  });
+
+  it('derives each round with its day, revote flag, ballots, and outcome', () => {
+    const log: GameEvent[] = [
+      { type: 'NIGHT_BEGAN', dayNumber: 1 },
+      {
+        type: 'VOTE_TALLY',
+        kind: 'exile',
+        revote: false,
+        counts: [{ seat: 7, votes: 2 }],
+        ballots: [
+          { voter: 1, target: 7, weight: 1 },
+          { voter: 2, target: null, weight: 1 },
+          { voter: 3, target: 7, weight: 1.5 },
+        ],
+      },
+      { type: 'PLAYER_EXILED', seat: 7 },
+      { type: 'NIGHT_BEGAN', dayNumber: 2 },
+      { type: 'DAY_BROKE', dayNumber: 2 },
+      {
+        type: 'VOTE_TALLY',
+        kind: 'exile',
+        revote: true,
+        counts: [
+          { seat: 7, votes: 1 },
+          { seat: 9, votes: 1 },
+        ],
+        ballots: [{ voter: 1, target: 7, weight: 1 }],
+      },
+      { type: 'EXILE_BLOCKED_BY_IDIOT', seat: 7 },
+    ];
+    const rounds = voteRoundsOf(log);
+    expect(rounds).toHaveLength(2);
+    expect(rounds[0]).toMatchObject({
+      kind: 'exile',
+      day: 1,
+      revote: false,
+      outcome: { kind: 'exiled', seat: 7 },
+    });
+    expect(rounds[0]!.ballots.map((b) => b.voter)).toEqual([1, 2, 3]);
+    expect(rounds[1]).toMatchObject({
+      kind: 'exile',
+      day: 2,
+      revote: true,
+      outcome: { kind: 'blocked-by-idiot', seat: 7 },
+    });
+  });
+
+  it('labels the first idiot flip and sheriff outcomes distinctly', () => {
+    const log: GameEvent[] = [
+      {
+        type: 'VOTE_TALLY',
+        kind: 'exile',
+        revote: false,
+        counts: [{ seat: 12, votes: 4 }],
+        ballots: [{ voter: 1, target: 12, weight: 1 }],
+      },
+      { type: 'IDIOT_REVEALED', seat: 12 },
+      {
+        type: 'VOTE_TALLY',
+        kind: 'sheriff',
+        revote: false,
+        counts: [{ seat: 9, votes: 5 }],
+        ballots: [{ voter: 1, target: 9, weight: 1 }],
+      },
+      { type: 'SHERIFF_ELECTED', seat: 9 },
+    ];
+    expect(voteRoundsOf(log).map((r) => r.outcome)).toEqual([
+      { kind: 'idiot-revealed', seat: 12 },
+      { kind: 'elected', seat: 9 },
+    ]);
+  });
+
+  it('reads a tie into the next same-kind tally as PK, and a revote tie as void', () => {
+    const tally = (revote: boolean): GameEvent => ({
+      type: 'VOTE_TALLY',
+      kind: 'exile',
+      revote,
+      counts: [
+        { seat: 6, votes: 3 },
+        { seat: 7, votes: 3 },
+      ],
+      ballots: [],
+    });
+    const rounds = voteRoundsOf([tally(false), tally(true), { type: 'NIGHT_BEGAN', dayNumber: 2 }]);
+    expect(rounds.map((r) => r.outcome)).toEqual([{ kind: 'pk' }, { kind: 'void' }]);
+  });
+
+  it('derives NO_SHERIFF endings', () => {
+    const log: GameEvent[] = [
+      {
+        type: 'VOTE_TALLY',
+        kind: 'sheriff',
+        revote: false,
+        counts: [{ seat: null, votes: 8 }],
+        ballots: [],
+      },
+      { type: 'NO_SHERIFF' },
+    ];
+    expect(voteRoundsOf(log)[0]!.outcome).toEqual({ kind: 'no-sheriff' });
   });
 });
 
@@ -402,7 +530,18 @@ describe('postgameStatsOf', () => {
     {
       type: 'VOTE_TALLY',
       kind: 'sheriff',
+      revote: false,
       counts: [{ seat: 3, votes: 8 }],
+      ballots: [
+        { voter: 1, target: 3, weight: 1 },
+        { voter: 2, target: 3, weight: 1 },
+        { voter: 4, target: 3, weight: 1 },
+        { voter: 5, target: 3, weight: 1 },
+        { voter: 6, target: 3, weight: 1 },
+        { voter: 7, target: 3, weight: 1 },
+        { voter: 8, target: 3, weight: 1 },
+        { voter: 9, target: 3, weight: 1 },
+      ],
     },
     { type: 'SHERIFF_ELECTED', seat: 3 },
     { type: 'NIGHT_BEGAN', dayNumber: 1 },
@@ -412,10 +551,22 @@ describe('postgameStatsOf', () => {
     {
       type: 'VOTE_TALLY',
       kind: 'exile',
+      revote: false,
       counts: [
         { seat: 7, votes: 5 },
         { seat: 11, votes: 1.5 },
         { seat: null, votes: 3 },
+      ],
+      ballots: [
+        { voter: 1, target: 7, weight: 1 },
+        { voter: 3, target: 11, weight: 1.5 },
+        { voter: 4, target: 7, weight: 1 },
+        { voter: 5, target: 7, weight: 1 },
+        { voter: 6, target: 7, weight: 1 },
+        { voter: 8, target: 7, weight: 1 },
+        { voter: 9, target: null, weight: 1 },
+        { voter: 10, target: null, weight: 1 },
+        { voter: 12, target: null, weight: 1 },
       ],
     },
     { type: 'PLAYER_EXILED', seat: 7 },
@@ -428,9 +579,18 @@ describe('postgameStatsOf', () => {
     {
       type: 'VOTE_TALLY',
       kind: 'exile',
+      revote: false,
       counts: [
         { seat: 6, votes: 4 },
         { seat: 7, votes: 2 },
+      ],
+      ballots: [
+        { voter: 1, target: 6, weight: 1 },
+        { voter: 3, target: 7, weight: 1.5 },
+        { voter: 4, target: 7, weight: 1 },
+        { voter: 5, target: 6, weight: 1 },
+        { voter: 9, target: 6, weight: 1 },
+        { voter: 10, target: 6, weight: 1 },
       ],
     },
     { type: 'PLAYER_EXILED', seat: 6 },
@@ -478,6 +638,17 @@ describe('postgameStatsOf', () => {
     expect(bySeat.get(6)).toMatchObject({ votesReceived: 4 });
     expect(bySeat.get(11)).toMatchObject({ votesReceived: 1.5 }); // the sheriff's weighted vote
     expect(bySeat.get(3)).toMatchObject({ votesReceived: 0 }); // sheriff-kind tally ignored
+  });
+
+  it('counts ballots cast per seat from the public ballot reveals', () => {
+    const bySeat = new Map(postgameStatsOf(finishedView).map((s) => [s.seat, s]));
+    // Election (→3) + day-1 exile (→7) + day-2 exile (→6).
+    expect(bySeat.get(5)).toMatchObject({ votesCast: 3 });
+    // The elected sheriff is a candidate in the election (no ballot), then
+    // casts the weighted badge vote in both exile rounds.
+    expect(bySeat.get(3)).toMatchObject({ votesCast: 2 });
+    // An abstention is still a cast ballot.
+    expect(bySeat.get(12)).toMatchObject({ votesCast: 1 }); // day-1 弃票
   });
 
   it('attributes each death to its day with a public-record fate line', () => {
