@@ -163,6 +163,21 @@ describe('sheriff — votes, PK, and revote', () => {
     expect(s.log.some((e) => e.type === 'NO_SHERIFF')).toBe(true);
     expect(s.phase).toBe('dawn-announce');
   });
+
+  it('a cast ballot is final — a second vote with two candidates standing is rejected', () => {
+    let s = apply(newGame(), { type: 'START_GAME' });
+    s = runNight(s, { kill: 5 });
+    s = apply(s, { type: 'SHERIFF_SIGNUP', actor: 9 });
+    s = apply(s, { type: 'SHERIFF_SIGNUP', actor: 10 });
+    s = apply(s, { type: 'PROCEED' }); // close signup
+    s = apply(s, { type: 'PROCEED' }); // 9 speaks
+    s = apply(s, { type: 'PROCEED' }); // 10 speaks
+    expect(s.phase).toBe('sheriff-vote');
+    s = apply(s, { type: 'SHERIFF_VOTE', actor: 1, target: 9 });
+    expect(s.vote?.votes[1]).toBe(9);
+    expectGameError(s, { type: 'SHERIFF_VOTE', actor: 1, target: 10 }, 'ALREADY_DONE');
+    expect(s.vote?.votes[1]).toBe(9);
+  });
 });
 
 describe('sheriff — badge weight and transfer', () => {

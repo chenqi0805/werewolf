@@ -113,6 +113,11 @@ export function handleSheriffVote(
   if (!vote.electorate.includes(action.actor)) {
     throw new GameError('NO_VOTE_RIGHTS', 'Only 警下 players vote for sheriff.');
   }
+  // A cast ballot is final — the wolf kill's latest-wins semantics do not
+  // extend to public ballots.
+  if (vote.votes[action.actor] !== undefined) {
+    throw new GameError('ALREADY_DONE', 'A cast ballot is final.');
+  }
   if (action.target !== null && !el.candidates.includes(action.target)) {
     throw new GameError('INVALID_TARGET', 'Vote for a standing candidate or abstain.');
   }

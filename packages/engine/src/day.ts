@@ -183,6 +183,12 @@ export function handleExileVote(
   if (!vote.electorate.includes(action.actor)) {
     throw new GameError('NO_VOTE_RIGHTS', 'You have no vote rights.');
   }
+  // A cast ballot is final — a retry or double-click must not silently
+  // rewrite the tally (EXILE_VOTE_CAST is server-visible only, so a rewrite
+  // would be invisible to players).
+  if (vote.votes[action.actor] !== undefined) {
+    throw new GameError('ALREADY_DONE', 'A cast ballot is final.');
+  }
   if (action.target !== null) requireLivingTarget(state, action.target);
   vote.votes[action.actor] = action.target;
   events.push({ type: 'EXILE_VOTE_CAST', actor: action.actor, target: action.target });
