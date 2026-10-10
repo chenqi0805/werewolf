@@ -9,3 +9,8 @@ packages/e2e/test-results/
 packages/e2e/playwright-report/
 # The default SQLite location (WEREWOLF_DB_PATH, data/werewolf.db under cwd)
 data/
+
+# Local env files — nothing loads .env today; guard for the first dotenv adoption (audit F7)
+.env
+.env.*
+!.env.example

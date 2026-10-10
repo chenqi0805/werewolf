@@ -63,6 +63,8 @@ interface GameScreenProps {
   send: (action: PlayerAction) => void;
   /** The page's live socket — carries the seat's captured voice frames. */
   socket: GameSocket;
+  /** Client-side return to the main page (spectators have no seat to leave). */
+  onExit: () => void;
 }
 
 function Waiting({ note }: { note: string }): JSX.Element {
@@ -79,7 +81,7 @@ function CandidateList({ seats }: { seats: SeatView[] }): JSX.Element {
  * running day log. Every gate and action payload comes from the pure helpers
  * in `gating.ts` — this file only arranges JSX and forwards clicks.
  */
-export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): JSX.Element {
+export function GameScreen({ view, roomCode, send, socket, onExit }: GameScreenProps): JSX.Element {
   const seats: SeatView[] = seatViewsOf(view);
   const entries = logToEntries(view.log, view.board);
   const speechGroups = speechByDayOf(view);
@@ -125,7 +127,14 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
       <main className="scr-page scr-page--village">
         <NightVillageBackground />
         <section className="scr-panel">
-          <span className="scr-code">{roomCode}</span>
+          <div className="scr-row scr-row--spread">
+            <span className="scr-code">{roomCode}</span>
+            {/* Spectators hold no seat, so exit is client-side only:
+                `room:leave` is seat-scoped and would ack NOT_IN_ROOM. */}
+            <button type="button" className="scr-exit" onClick={onExit}>
+              返回主页
+            </button>
+          </div>
           <SpectatorView
             seats={seats}
             speakingSeat={speakingSeatOf(step)}
