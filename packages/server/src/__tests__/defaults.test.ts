@@ -91,12 +91,13 @@ describe('DEFAULT_TIMERS', () => {
     expect(DEFAULT_TIMERS['night:wolf']).toBe(60_000);
     expect(DEFAULT_TIMERS['night:witch']).toBe(60_000);
     expect(DEFAULT_TIMERS['night:seer']).toBe(45_000);
-    // Scope guard: only the night keys moved — day pacing stays standard.
-    expect(DEFAULT_TIMERS['sheriff-signup']).toBe(20_000);
+    // Scope guard: the v3 day-cycle spec pinned the signup window at 15s and
+    // the badge window at 10s — every other day clock stays standard.
+    expect(DEFAULT_TIMERS['sheriff-signup']).toBe(15_000);
     expect(DEFAULT_TIMERS.speech).toBe(75_000);
     expect(DEFAULT_TIMERS['exile-vote']).toBe(45_000);
     expect(DEFAULT_TIMERS['hunter-shot']).toBe(20_000);
-    expect(DEFAULT_TIMERS['badge-pass']).toBe(15_000);
+    expect(DEFAULT_TIMERS['badge-pass']).toBe(10_000);
   });
 });
 

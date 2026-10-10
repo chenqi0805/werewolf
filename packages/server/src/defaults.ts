@@ -110,7 +110,8 @@ export const DEFAULT_TIMERS: Record<string, number> = {
   'night:wolf': 60_000,
   'night:witch': 60_000,
   'night:seer': 45_000,
-  'sheriff-signup': 20_000,
+  // 上警举手窗 — 15s to raise a hand (v3 day-cycle spec).
+  'sheriff-signup': 15_000,
   'sheriff-speech': 45_000,
   'sheriff-vote': 30_000,
   'dawn-announce': 10_000,
@@ -120,7 +121,8 @@ export const DEFAULT_TIMERS: Record<string, number> = {
   'pk-speech': 45_000,
   'pk-vote': 30_000,
   'hunter-shot': 20_000,
-  'badge-pass': 15_000,
+  // 警徽移交/撕毁窗 — 10s; lapse injects SHERIFF_PASS target:null (撕毁).
+  'badge-pass': 10_000,
 };
 
 function livingWolves(state: GameState): number[] {
