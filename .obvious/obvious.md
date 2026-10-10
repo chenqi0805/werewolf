@@ -61,13 +61,41 @@ The bot brain stack lives on the **project sandbox**, not in the repo or the rep
 - **Binary** — llama.cpp prebuilt CPU binaries, release **b11539** (Ubuntu 24.04 x64), at `/home/user/work/llama/llama-b11539/`. No build step. Known quirk of this build: the default JSON-schema paths (`-j`, `-jf`, per-request `response_format`) fail with `Failed to initialize samplers`; **GBNF grammars work** — the stack relies on them exclusively.
 - **Model** — Qwen2.5-0.5B-Instruct **Q4_K_M GGUF**, 491,400,032 bytes (~469 MiB, ~0.4 GB RAM resident), at `/home/user/work/llama/models/qwen2.5-0.5b-instruct-q4_k_m.gguf`. Instruction-tuned, Chinese-strong, comfortably within the 2-core sandbox budget.
 - **Constrained decoding, two layers** (both files in `/home/user/work/llama/`):
-  1. `bot-decision.gbnf` — the catch-all grammar passed to `llama-server` via `--grammar-file`. Every completion is forced into the `BotDecision` envelope `{"action": <one of 19 PlayerAction variants>, "speech": "…"}` with seats constrained to 1–12.
+  1. `bot-decision.gbnf` — the catch-all grammar passed to `llama-server` via `--grammar-file`. Every completion is forced into the `BotDecision` envelope `{"action": <one of 20 PlayerAction variants>, "speech": "…"}` with seats constrained to 1–12.
   2. `phase-proxy.mjs` — a zero-dependency Node proxy on `127.0.0.1:8082` that forwards to `8081`. The bot's request body already carries its own fog-of-war view; the proxy reads `view.step` and `view.you.seat` from it and injects llama-server's per-request `grammar` field, narrowing the action set to what the current step legally allows and pinning the actor seat. It adds no information the bot did not already have. Rationale: with the catch-all grammar alone the 0.5B model picks phase-wrong actions (it anchored on `WOLF_KILL` in every phase — 26/30 smoke decisions fell back); with the proxy the fallback rate dropped to 3/30 and chat p95 from 6165 ms to 2085 ms.
 - **tmux sessions** (both must be up before `svc-3210` starts, or bot decisions simply degrade to scripted):
   - `svc-8081`: `/home/user/work/llama/llama-b11539/llama-server -m /home/user/work/llama/models/qwen2.5-0.5b-instruct-q4_k_m.gguf --alias qwen2.5-0.5b-instruct --host 127.0.0.1 --port 8081 -c 32768 --parallel 8 -t 2 --cache-reuse 256 --grammar-file /home/user/work/llama/bot-decision.gbnf`
   - `svc-8082`: `node /home/user/work/llama/phase-proxy.mjs`
 - **Re-provision after a rebuild**: recreate `/home/user/work/llama/`, download the b11539 prebuilt archive and the GGUF (both single-URL fetches; verify the model is exactly 491,400,032 bytes), restore the two files, restart both tmux sessions in order (`svc-8081`, then `svc-8082`), then restart `svc-3210` (its env already points at the proxy). Verify with `curl -s http://127.0.0.1:8081/health` through the proxy (`curl -s http://127.0.0.1:8082/health`) and one `smoke:llm` run.
 - **Measured live profile (2026-10-10, through the proxy)**: 30 smoke decisions — fallback 3/30, chat p50 1564 ms, p95 2085 ms. In the live game, ~12 seats of night actions + speeches advanced on humane clocks without a stall.
+- **v3 grammar additions — 警上发言 + 狼人自爆 (from PR `feat/bots-election-explode`, apply to the live stack)**: the bots PR wires 警上发言 (`SPEAK` in `sheriff-speech`) and `WOLF_EXPLODE` legality into `packages/bots/src/llm.ts`; these two grammar files here must gain the matching rules or the model can never emit either action. Apply the three edits below verbatim, then restart per step 4.
+  1. `bot-decision.gbnf` — replace the `action ::= …` line with:
+     ```
+     action ::= wolf-kill | guard-protect | guard-pass | witch-heal | witch-pass | witch-poison | seer-check | seer-pass | sheriff-signup | sheriff-withdraw | sheriff-vote | sheriff-pass | speak | exile-vote | hunter-shoot | hunter-pass | wolfking-destruct | wolfking-pass | set-direction | wolf-explode
+     ```
+     and append the new rule beside the other action rules:
+     ```
+     wolf-explode ::= "{" ws "\"type\"" ws ":" ws "\"WOLF_EXPLODE\"" ws "," ws "\"actor\"" ws ":" ws seat ws "}"
+     ```
+  2. `phase-proxy.mjs` — in the `RULES` template, append this line (note the JS-escaped quotes and the pinned `actor-seat`, matching its sibling rules):
+     ```
+     wolf-explode ::= "{" ws "\\\"type\\\"" ws ":" ws "\\\"WOLF_EXPLODE\\\"" ws "," ws "\\\"actor\\\"" ws ":" ws actor-seat ws "}"
+     ```
+     In the `ALL` const, append ` | wolf-explode` (the alternation ends `… | wolfking-destruct | wolfking-pass | set-direction | wolf-explode`).
+  3. `phase-proxy.mjs` — in `phaseAlternation`, replace the contiguous block from `case 'sheriff-signup'` through the speech group with (the wolf-explode window is the engine's `EXPLODE_WINDOWS`; `last-words` splits out — a dead speaker can never explode, and `SET_SPEECH_DIRECTION` was never legal there):
+     ```js
+     case 'sheriff-signup': return 'sheriff-signup | sheriff-withdraw | wolf-explode';
+     case 'sheriff-vote': return 'sheriff-vote | sheriff-pass';
+     case 'pk-vote':
+       return step.voteKind === 'sheriff' ? 'sheriff-vote | sheriff-pass' : 'exile-vote';
+     case 'sheriff-speech': return 'speak | wolf-explode';
+     case 'speech':
+     case 'pk-speech':
+       return 'speak | set-direction | wolf-explode';
+     case 'last-words':
+       return 'speak';
+     ```
+  4. Restart and verify: `tmux kill-session -t svc-8081` then re-run its command from the tmux bullet above (the catch-all `--grammar-file` is read at boot), restart `svc-8082` (`RULES`/`ALL` load at boot), leave `svc-3210` running (the proxy change is transparent to it). Verify with one `WEREWOLF_SMOKE_LLM=1 npm run smoke:llm -w @werewolf/bots` — expect the fallback rate to stay in the single digits and `sheriff-signup`-step decisions to appear in the phase log.
 
 ## Codebase map
 
