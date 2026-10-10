@@ -240,6 +240,11 @@ export class BotRunner {
       this.emitSpeech(view, seat, decision);
     } finally {
       this.deciding = false;
+      // A view arriving mid-decision found the early return and was dropped —
+      // the decision completing here was computed against the captured, now
+      // stale view. Decide the newest one now; the fingerprint dedupe keeps
+      // a repeated opportunity from double-emitting.
+      if (this.running && this.latest !== view) void this.decideOnce();
     }
   }
 

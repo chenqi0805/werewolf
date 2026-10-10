@@ -4,7 +4,7 @@ import type { Socket } from 'socket.io-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BotRunner, type BotEndReason } from '../runner';
-import type { BotStrategy } from '../strategy';
+import type { BotDecision, BotStrategy } from '../strategy';
 
 // — socket.io-client mock — the runner is the only importer; tests drive the
 // server side of the wire directly on each fake socket. —
@@ -222,5 +222,42 @@ describe('BotRunner', () => {
     runner.stop();
     expect(onEnd).toHaveBeenCalledTimes(1);
     expect(onEnd).toHaveBeenCalledWith('stopped');
+  });
+
+  it('decides the newest view with one trailing decision when a view lands mid-decision', async () => {
+    // Deferred strategy: each decide() parks until the test resolves it, so
+    // the second view provably arrives while decision one is in flight.
+    const calls: PlayerView[] = [];
+    const resolvers: Array<(decision: BotDecision | null) => void> = [];
+    const strategy: BotStrategy = {
+      decide: (ctx) => {
+        calls.push(ctx.view);
+        return new Promise((resolve) => resolvers.push(resolve));
+      },
+    };
+    const runner = runnerOf({ strategy });
+    const socket = nextSocket();
+    runner.start();
+    socket.fire('connect');
+    rejoinAckOf(socket)(null, { seat: 3, name: '' }); // timed ack: (err, resp) — settle the attempt
+    await flush();
+
+    socket.fire('game:view', viewOf({ kind: 'speech', order: [3], cursor: 0 }));
+    await flush();
+    expect(calls).toHaveLength(1); // decision in flight
+
+    socket.fire('game:view', viewOf({ kind: 'speech', order: [3], cursor: 1 }));
+    await flush();
+    expect(calls).toHaveLength(1); // held, not dropped
+
+    resolvers[0]?.({ action: { type: 'SPEAK', actor: 3, text: '过' } });
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]?.step).toEqual({ kind: 'speech', order: [3], cursor: 1 }); // the newer view
+
+    // The trailing decision emits too — one speak per step, no duplicates.
+    resolvers[1]?.({ action: { type: 'SPEAK', actor: 3, text: '听我说' } });
+    await flush();
+    expect(emitsOf(socket, 'game:action')).toHaveLength(2);
+    runner.stop();
   });
 });
