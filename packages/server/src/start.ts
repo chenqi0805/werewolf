@@ -50,7 +50,16 @@ app.httpServer.listen(port, () => {
 
 function shutdown(signal: NodeJS.Signals): void {
   console.log(`received ${signal}, shutting down`);
-  void app.close().then(() => process.exit(0));
+  void app
+    .close()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      // Teardown must never die as an unhandled rejection mid-cleanup: a
+      // failing close step is logged and surfaces as a nonzero exit for
+      // supervisors, instead of truncating teardown with exit-code noise.
+      console.error('shutdown failed:', err);
+      process.exit(1);
+    });
 }
 
 process.on('SIGINT', shutdown);
