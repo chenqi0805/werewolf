@@ -59,6 +59,9 @@ export type GameEvent =
   | { type: 'EXILE_BLOCKED_BY_IDIOT'; seat: Seat }
   /** Public: the 白狼王 reveals and self-destructs, taking his target. */
   | { type: 'WHITE_WOLF_KING_DESTRUCTED'; actor: Seat; target: Seat }
+  /** Public: a plain wolf reveals and self-destructs (no target taken). His
+   *  death is announced through this event, never DEATH_ANNOUNCED. */
+  | { type: 'WOLF_EXPLODED'; seat: Seat }
   | { type: 'WOLF_KING_PASSED'; actor: Seat }
   /** Public: shooting reveals the hunter. */
   | { type: 'HUNTER_SHOT'; shooter: Seat; target: Seat }

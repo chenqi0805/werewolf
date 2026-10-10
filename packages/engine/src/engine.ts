@@ -23,6 +23,7 @@ import {
   handleSetSpeechDirection,
   handleSheriffPass,
   handleSpeak,
+  handleWolfExplode,
   handleWolfKingDestruct,
   handleWolfKingPass,
 } from './day';
@@ -125,6 +126,9 @@ function route(state: GameState, action: GameAction, events: GameEvent[]): void 
       return;
     case 'WOLF_KING_PASS':
       handleWolfKingPass(state, action, events);
+      return;
+    case 'WOLF_EXPLODE':
+      handleWolfExplode(state, action, events);
       return;
     case 'SET_SPEECH_DIRECTION':
       handleSetSpeechDirection(state, action, events);

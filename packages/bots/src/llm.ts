@@ -117,6 +117,10 @@ export function isLegalFor(view: PlayerView, action: PlayerAction): boolean {
       return kind === 'hunter-shot' && view.step.seat === action.actor;
     case 'SET_SPEECH_DIRECTION':
       return kind === 'speech';
+    case 'WOLF_EXPLODE':
+      // 狼人自爆: LLM-side legality (wolf camp + open window) lands with the
+      // bots wiring PR — until then no LLM bot ever picks it.
+      return false;
   }
 }
 

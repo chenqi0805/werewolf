@@ -4,7 +4,7 @@ import { GameError } from './errors';
 import { afterDawn, applyDeath, drainResolution, enterNight, enterSpeech } from './resolution';
 import type { GameState } from './state';
 import { getPlayer, livingPlayers, requireLivingTarget, requireVote } from './state';
-import { canVote, type Seat } from './types';
+import { canVote, type Phase, type Seat } from './types';
 import { plurality, tallyRows, tallyVotes } from './votes';
 
 // — dawn ————————————————————————————————————————————————————————————————
@@ -34,7 +34,7 @@ export function announceNext(state: GameState, events: GameEvent[]): void {
 
 function finishDawn(state: GameState, events: GameEvent[]): void {
   if (state.resolution) drainResolution(state, events);
-  else afterDawn(state);
+  else afterDawn(state, events);
 }
 
 // — last words ——————————————————————————————————————————————————————————
@@ -365,6 +365,53 @@ export function handleWolfKingPass(
   }
   head.destructWindowDone = true;
   events.push({ type: 'WOLF_KING_PASSED', actor: action.actor });
+  drainResolution(state, events);
+}
+
+// — wolf explode (狼人自爆) —
+
+/** A plain wolf may reveal and die only while a voice is live: the signup
+ *  window and every speech phase. Ballots are simultaneous — never
+ *  interrupted, so no vote phase ever opens the window. */
+const EXPLODE_WINDOWS: readonly Phase[] = [
+  'sheriff-signup',
+  'sheriff-speech',
+  'speech',
+  'pk-speech',
+];
+
+/**
+ * 狼人自爆 — a plain wolf (badge held or not) reveals and self-destructs with
+ * no target. The 白狼王 keeps his targeted destruct and cannot use this. The
+ * day ends immediately: after the explosion's own settlement drains (a
+ * wolf-sheriff's badge window runs first), night falls — on day 1 the
+ * buffered night deaths release through the dawn announcements first. The
+ * 双爆吞警徽 knob stays scoped to the 白狼王's destructs; a plain explode
+ * never swallows a badge.
+ */
+export function handleWolfExplode(
+  state: GameState,
+  action: Extract<GameAction, { type: 'WOLF_EXPLODE' }>,
+  events: GameEvent[],
+): void {
+  const actor = getPlayer(state, action.actor);
+  if (!actor.alive) throw new GameError('PLAYER_DEAD', 'Dead players cannot act.');
+  if (actor.role !== 'werewolf') {
+    throw new GameError(
+      'NOT_YOUR_TURN',
+      'Only a plain wolf explodes — the 白狼王 destructs with a target.',
+    );
+  }
+  if (!EXPLODE_WINDOWS.includes(state.phase)) {
+    throw new GameError('WRONG_PHASE', 'No wolf explode window is open.');
+  }
+  // The death is public through this event — never a DEATH_ANNOUNCED (same
+  // convention as the 白狼王's destruct).
+  events.push({ type: 'WOLF_EXPLODED', seat: action.actor });
+  const record = applyDeath(state, action.actor, 'self-destruct', events);
+  // The explosion rips up the election — platform, speeches, ballot all void.
+  state.election = null;
+  state.resolution = { origin: 'explode', queue: [record], newDeaths: true };
   drainResolution(state, events);
 }
 

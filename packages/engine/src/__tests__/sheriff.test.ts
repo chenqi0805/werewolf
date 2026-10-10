@@ -249,3 +249,84 @@ describe('sheriff — badge weight and transfer', () => {
     expect(announced).toBeGreaterThan(elected);
   });
 });
+
+describe('sheriff — explosion during the election (自爆)', () => {
+  it('an explosion mid-campaign voids the election and releases the night deaths in order', () => {
+    let s = apply(newGame(), { type: 'START_GAME' });
+    s = runNight(s, { kill: 5 });
+    s = apply(s, { type: 'SHERIFF_SIGNUP', actor: 9 });
+    s = apply(s, { type: 'SHERIFF_SIGNUP', actor: 10 });
+    s = apply(s, { type: 'PROCEED' }); // candidate speeches
+    s = apply(s, { type: 'WOLF_EXPLODE', actor: 1 });
+
+    // No sheriff is ever elected — platform, speeches, and ballot are void.
+    expect(s.log.some((e) => e.type === 'SHERIFF_ELECTED')).toBe(false);
+    expect(s.election).toBeNull();
+    // Release order: explode → day breaks → (PROCEED) → announcements → night.
+    const exploded = s.log.findIndex((e) => e.type === 'WOLF_EXPLODED');
+    const broke = s.log.findIndex((e) => e.type === 'DAY_BROKE');
+    expect(exploded).toBeGreaterThan(-1);
+    expect(broke).toBeGreaterThan(exploded);
+    s = apply(s, { type: 'PROCEED' });
+    const announced = s.log.findIndex((e) => e.type === 'DEATH_ANNOUNCED' && e.seat === 5);
+    const night = s.log.findIndex((e) => e.type === 'NIGHT_BEGAN' && e.dayNumber === 2);
+    expect(announced).toBeGreaterThan(broke);
+    expect(night).toBeGreaterThan(announced);
+    expect(s.phase).toBe('night');
+  });
+
+  it('a wolf-sheriff exploding routes through the badge window before night', () => {
+    let s = apply(newGame(), { type: 'START_GAME' });
+    s = runNight(s, { kill: 5 });
+    s = apply(s, { type: 'SHERIFF_SIGNUP', actor: 1 }); // the wolf runs
+    s = apply(s, { type: 'PROCEED' });
+    s = apply(s, { type: 'PROCEED' });
+    s = voteAll(s, 'SHERIFF_VOTE', 1);
+    expect(P(s, 1).hasBadge).toBe(true);
+    s = throughDayOpen(s); // announcements + last words → speech round
+    expect(s.phase).toBe('speech');
+    s = apply(s, { type: 'SET_SPEECH_DIRECTION', actor: 1, direction: 'cw' });
+    s = apply(s, { type: 'WOLF_EXPLODE', actor: 1 });
+    // The badge window opens on the explosion's own settlement — a plain
+    // explode never swallows the badge (双爆吞警徽 stays the 白狼王's knob).
+    expect(s.phase).toBe('badge-pass');
+    expect(s.resolution?.queue[0]?.badgePass).toBe(true);
+    // A second wolf cannot interleave into the open settlement.
+    expectGameError(s, { type: 'WOLF_EXPLODE', actor: 2 }, 'WRONG_PHASE');
+    s = apply(s, { type: 'SHERIFF_PASS', actor: 1, target: 2 });
+    expect(P(s, 2).hasBadge).toBe(true);
+    expect(s.phase).toBe('night');
+    expect(s.dayNumber).toBe(2);
+    const passed = s.log.findIndex((e) => e.type === 'BADGE_PASSED');
+    const night = s.log.findIndex((e) => e.type === 'NIGHT_BEGAN' && e.dayNumber === 2);
+    expect(passed).toBeGreaterThan(-1);
+    expect(night).toBeGreaterThan(passed);
+  });
+
+  it('the win check fires exactly once when the last wolf explodes mid-speech', () => {
+    let s = apply(newGame(), { type: 'START_GAME' });
+    // Night 1: the wolves knife 5; the witch poisons wolf 2.
+    s = runNight(s, { kill: 5, poison: 2 });
+    // Day 1: the election voids (empty signup), the deaths release, wolf 3 exiled.
+    s = apply(s, { type: 'PROCEED' });
+    s = throughDayOpen(s);
+    s = speechRound(s);
+    s = voteAll(s, 'EXILE_VOTE', 3);
+    expect(P(s, 3).alive).toBe(false);
+    // Night 2: knife 6; day 2: wolf 4 exiled.
+    s = runNight(s, { kill: 6 });
+    s = throughDayOpen(s);
+    s = speechRound(s);
+    s = voteAll(s, 'EXILE_VOTE', 4);
+    expect(P(s, 4).alive).toBe(false);
+    // Night 3: 空刀; day 3: the last wolf explodes mid-speech — good wins.
+    s = runNight(s, { kill: null });
+    s = throughDayOpen(s);
+    expect(s.phase).toBe('speech');
+    s = apply(s, { type: 'WOLF_EXPLODE', actor: 1 });
+    expect(s.winner).toBe('good');
+    expect(s.phase).toBe('game-over');
+    expect(s.log.filter((e) => e.type === 'GAME_OVER')).toHaveLength(1);
+    expectGameError(s, { type: 'WOLF_EXPLODE', actor: 2 }, 'WRONG_PHASE'); // game over
+  });
+});

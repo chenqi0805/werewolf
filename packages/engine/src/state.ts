@@ -87,11 +87,18 @@ export interface DawnState {
   /** Announcements in order: night deaths by seat, or a single 平安夜. */
   pending: Array<DeathRecord | 'peace'>;
   announced: DeathRecord[];
+  /**
+   * 自爆释放 — this dawn was released by a wolf explode mid-election: when
+   * the announcements end, night falls and the day's program (last words,
+   * speeches) is skipped. The marker is how afterDawn tells an explosion's
+   * released dawn from one that followed a natural election resolution.
+   */
+  explodeRelease: boolean;
 }
 
 export interface ResolutionState {
-  /** `dawn` = night deaths resolving; `day` = exile/shot deaths. */
-  origin: 'dawn' | 'day';
+  /** `dawn` = night deaths resolving; `day` = exile/shot deaths; `explode` = 自爆. */
+  origin: 'dawn' | 'day' | 'explode';
   queue: DeathRecord[];
   /** True once a death was applied during this step — gates the win check. */
   newDeaths: boolean;
