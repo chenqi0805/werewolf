@@ -13,6 +13,8 @@ export const ROLE_LABELS: Record<string, Role> = {
   预言家: 'seer',
   女巫: 'witch',
   猎人: 'hunter',
+  守卫: 'guard',
+  白狼王: 'white_wolf_king',
   白痴: 'idiot',
 };
 
