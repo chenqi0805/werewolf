@@ -27,6 +27,11 @@ export async function dayLogText(page: Page): Promise<string> {
   return (await page.locator('[aria-label="对局记录"]').textContent()) ?? '';
 }
 
+/** The 每轮票形 panel's full text — every resolved round's ballot reveal. */
+export async function voteHistoryText(page: Page): Promise<string> {
+  return (await page.locator(SELECTORS.voteHistory).textContent()) ?? '';
+}
+
 /**
  * The 复盘 section on the game-over screen: the deterministic stats grid is
  * always rendered — one row per seat, the whole table's shared numbers —

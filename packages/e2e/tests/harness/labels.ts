@@ -55,6 +55,7 @@ export const SELECTORS = {
   boardOptionWolfKing: 'button.scr-board-option:has-text("白狼王局")',
   inviteGroup: '[aria-label="邮件邀请"]',
   postgameSection: 'section[aria-label="本场复盘"]',
+  voteHistory: 'section[aria-label="每轮票形"]',
   postgameGrid: '[aria-label="全场数据"]',
   postgameAskButton: 'button:has-text("生成复盘")',
   postgameReview: ':text("关键节点")',
