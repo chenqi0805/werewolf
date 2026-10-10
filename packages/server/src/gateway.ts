@@ -190,6 +190,10 @@ export function attachGateway(
   const invitesAvailable = attachInvites(io, registry, opts?.invites);
 
   function bind(socket: GatewaySocket, roomCode: string, seat: Seat | null): void {
+    // One room per socket: a socket already fanned out to another room leaves
+    // it first. Keeping the old membership would feed a rebound socket its
+    // previous room's views and events, projected for the new room's seat.
+    if (socket.data.roomCode !== null && socket.data.roomCode !== roomCode) unbind(socket);
     socket.data.roomCode = roomCode;
     socket.data.seat = seat;
     let set = roomSockets.get(roomCode);
