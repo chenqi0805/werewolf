@@ -32,8 +32,9 @@ export interface SeatRow {
  * nothing about storage — hooks are plain synchronous callbacks invoked at
  * the moment the change is durable in memory. A room without hooks behaves
  * exactly like v1. Callbacks may throw (a failed store write fails loudly);
- * the action stream then simply ends at the last recorded action, which is
- * a consistent older state for replay.
+ * the room then rolls its memory back to the pre-action state, so the
+ * action stream simply ends at the last recorded action and memory stays
+ * prefix-consistent with it — a consistent older state for replay.
  */
 export interface RoomHooks {
   /** The room row must be written (room creation, restore re-attach). */
@@ -334,9 +335,17 @@ export class Room {
   }
 
   private apply(action: GameAction, source: ActionSource): Applied {
-    const result = applyAction(this.currentState, action);
+    const previous = this.currentState; // pure reducer: rollback is a reassign
+    const result = applyAction(previous, action);
     this.currentState = result.state;
-    this.hooks?.onAction?.(this, action, source);
+    try {
+      this.hooks?.onAction?.(this, action, source); // appendAction lives here
+    } catch (error) {
+      // A failed store write must leave memory matching the log — the stream
+      // "simply ends at the last recorded action", for real.
+      this.currentState = previous;
+      throw error;
+    }
     return result;
   }
 

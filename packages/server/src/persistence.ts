@@ -118,6 +118,8 @@ function replayRoom(row: RoomRowRaw, actions: ActionRowRaw[]): GameState {
  * come back with their clock: `rearm` receives the persisted deadline so the
  * gateway can schedule the remaining time; a deadline already in the past
  * resolves on the next tick, exactly like an expiry that fired mid-downtime.
+ * Quarantine is a replay-failure verdict only — a `rearm` throw is logged
+ * and the live room stays served.
  */
 export function restoreRooms(
   store: EventStore,
@@ -129,6 +131,10 @@ export function restoreRooms(
     try {
       const actions = store.loadActionRows(row.code);
       const seatRows = store.loadSeatRows(row.code);
+      // Read before the room goes live: a failed clock read lands in the
+      // catch below while the room is still unserved, never quarantining a
+      // room that is already in the registry.
+      const timer = store.loadTimerRow(row.code);
       const state = replayRoom(row, actions);
       const seats = new Map<Seat, SeatIdentity>(
         seatRows.map((s) => [s.seat, { tokenHash: s.tokenHash, name: s.name }]),
@@ -140,8 +146,18 @@ export function restoreRooms(
         restored: { state, seats, bots },
       });
       registry.restore(room);
-      rearm?.(room, store.loadTimerRow(row.code));
       summary.restored.push(row.code);
+      try {
+        rearm?.(room, timer);
+      } catch (error) {
+        // A failed re-arm is not a replay failure: the room is live and its
+        // state is consistent, so it stays served — only quarantining it
+        // would poison a healthy row for the next boot.
+        console.error(
+          `[werewolf] room ${row.code}: timer re-arm failed — serving without a re-armed clock:`,
+          error,
+        );
+      }
     } catch (error) {
       store.markQuarantined(row.code, Date.now());
       registry.reserveCode(row.code);
