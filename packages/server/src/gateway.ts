@@ -334,6 +334,11 @@ export function attachGateway(
       }
     } catch (error) {
       console.error(`[werewolf] room ${room.code}: timer injection failed:`, error);
+      // A failed expiry must never leave the room timerless: re-arm from the
+      // room's current state. If the tick advanced the phase before the hook
+      // threw, the new phase gets its own fresh clock; if the tick itself
+      // failed, the same key re-fires and expiry retries.
+      armTimer(room);
     }
   }
 

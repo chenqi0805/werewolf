@@ -6,17 +6,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventStore } from '../../eventStore';
 import {
   connect,
+  connectAll,
   createRoom,
+  joinRoom,
   scriptTimers,
+  startRoom,
   startServer,
   stopServer,
+  waitFor,
   type Client,
   type Rig,
 } from './helpers';
 
 /**
  * Gateway robustness regressions: room:create must never take the process
- * down (SRV-1/SRV-5).
+ * down (SRV-1/SRV-5), and a failed timer expiry must re-arm the clock
+ * instead of wedging the room forever (SRV-3).
  */
 
 const rigs: Rig[] = [];
@@ -88,4 +93,60 @@ describe('room:create hardening (SRV-1, SRV-5)', () => {
     const ok = await createRoom(client);
     expect(ok.roomCode).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/);
   }, 10_000);
+});
+
+describe('timer expiry survives a persistence-hook failure (SRV-3)', () => {
+  it('re-arms the clock after a throwing hook and advances on the next expiry', async () => {
+    const dbPath = resolve(tmpdir(), `werewolf-gw-${randomUUID()}.db`);
+    dbPaths.push(dbPath);
+    const rig = await startServer(scriptTimers(), { dbPath });
+    rigs.push(rig);
+
+    const realAppend = EventStore.prototype.appendAction;
+    type AppendRow = Parameters<typeof realAppend>[0];
+    // The hook throws exactly once, on the first timer-source append — the
+    // first expiry's default action. Starts ('server') pass through.
+    let threw = false;
+    vi.spyOn(EventStore.prototype, 'appendAction').mockImplementation(function (
+      this: EventStore,
+      row: AppendRow,
+    ) {
+      if (!threw && row.source === 'timer') {
+        threw = true;
+        throw new Error('disk full (simulated store failure)');
+      }
+      realAppend.call(this, row);
+    });
+
+    const errorLines: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errorLines.push(args.map(String).join(' '));
+    });
+
+    const { client: creator, rec: creatorRec } = await connect(rig);
+    const { roomCode } = await createRoom(creator);
+    for (const j of await connectAll(rig, 11)) await joinRoom(j.client, roomCode);
+    await startRoom(creator);
+
+    // The night:wolf deadline the room is advertising before the failure.
+    await waitFor(() => creatorRec.latest?.timer?.key === 'night:wolf');
+    const stale = creatorRec.latest?.timer;
+    expect(stale?.key).toBe('night:wolf');
+
+    // The hook throws during the first expiry...
+    await waitFor(() => errorLines.some((l) => l.includes('timer injection failed')), 5000);
+    expect(threw).toBe(true);
+
+    // ...but the room is not timerless: a fresh deadline is advertised...
+    await waitFor(
+      () => (creatorRec.latest?.timer?.endsAt ?? 0) > (stale?.endsAt ?? Infinity),
+      5000,
+    );
+
+    // ...and the next expiry advances the game past the wolf window.
+    await waitFor(() => creatorRec.latest?.phase === 'dawn-announce', 10_000);
+
+    // Exactly one failure: the re-arm healed the room, it did not loop.
+    expect(errorLines.filter((l) => l.includes('timer injection failed')).length).toBe(1);
+  }, 20_000);
 });
