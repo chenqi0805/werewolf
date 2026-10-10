@@ -1,7 +1,7 @@
 import type { BoardId, GameEvent, Seat } from '@werewolf/engine';
 
 import { boardOptionOf } from '../boardOptions';
-import type { PlayerView, StepView, YouView } from '@werewolf/server';
+import type { PlayerRow, PlayerView, StepView, YouView } from '@werewolf/server';
 
 import type {
   LogEntry,
@@ -19,6 +19,11 @@ import type {
 /** Label for a seat, everywhere in the UI. */
 export function seatLabel(seat: Seat): string {
   return `${seat}号`;
+}
+
+/** Renderable name for a player row: chosen name, bot nickname, then the seat label. */
+export function rowLabelOf(row: PlayerRow): string {
+  return row.name || row.botName || seatLabel(row.seat);
 }
 
 /** The four speech contexts share one cursor read. */
@@ -41,7 +46,7 @@ export function seatViewsOf(view: PlayerView): SeatView[] {
   const speaking = speakingSeatOf(view.step);
   return view.players.map((row) => ({
     seat: row.seat,
-    name: row.botName ?? seatLabel(row.seat),
+    name: rowLabelOf(row),
     alive: row.alive,
     isSelf: row.seat === view.you.seat,
     isSheriff: row.hasBadge,
@@ -237,12 +242,18 @@ function datedSpeechOf(log: readonly GameEvent[]): DatedSpeech[] {
   return speeches;
 }
 
+/** seat → renderable name for every seated row, resolved once per view. */
+function namesOf(view: PlayerView): Map<Seat, string> {
+  return new Map(view.players.map((row) => [row.seat, rowLabelOf(row)]));
+}
+
 /** Every SPEECH_MADE event as a transcript row, in log order. */
-export function speechMessagesOf(log: readonly GameEvent[]): SpeechMessage[] {
-  return datedSpeechOf(log).map((speech, index) => ({
+export function speechMessagesOf(view: PlayerView): SpeechMessage[] {
+  const names = namesOf(view);
+  return datedSpeechOf(view.log).map((speech, index) => ({
     id: `sp-${index}`,
     seat: speech.seat,
-    name: seatLabel(speech.seat),
+    name: names.get(speech.seat) ?? seatLabel(speech.seat),
     text: speech.text,
   }));
 }
@@ -252,17 +263,16 @@ export function speechMessagesOf(log: readonly GameEvent[]): SpeechMessage[] {
  * within-day log order preserved. Speech never appears in DayLog, so this
  * feeds the dedicated SpeechHistory panel instead.
  */
-export function speechByDayOf(
-  log: readonly GameEvent[],
-): Array<{ day: number; records: SpeechRecord[] }> {
+export function speechByDayOf(view: PlayerView): Array<{ day: number; records: SpeechRecord[] }> {
+  const names = namesOf(view);
   const byDay = new Map<number, SpeechRecord[]>();
-  for (const speech of datedSpeechOf(log)) {
+  for (const speech of datedSpeechOf(view.log)) {
     const bucket = byDay.get(speech.day);
     const record: SpeechRecord = {
       day: speech.day,
       context: speech.context,
       seat: speech.seat,
-      name: seatLabel(speech.seat),
+      name: names.get(speech.seat) ?? seatLabel(speech.seat),
       text: speech.text,
     };
     if (bucket) bucket.push(record);

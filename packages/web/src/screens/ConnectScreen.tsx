@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import type { BoardId, Seat } from '@werewolf/engine';
 
 import { AckError, createRoom, joinRoom, type GameSocket } from '../client/socketClient';
+import { loadStoredName, saveStoredName } from '../client/nameCache';
 import { BOARD_OPTIONS } from '../boardOptions';
 
 interface ConnectScreenProps {
@@ -18,12 +19,15 @@ const errorText: Record<string, string> = {
 };
 
 /**
- * Landing screen: create a room or join one by code. The ack payloads are
+ * Landing screen: pick a display name, then create a room or join one by
+ * code. The name rides both paths (the server trims and caps it) and the
+ * last-used one pre-fills this form from localStorage. The ack payloads are
  * persisted by the App before the room screen mounts.
  */
 export function ConnectScreen({ socket, onSession }: ConnectScreenProps): JSX.Element {
   const [board, setBoard] = useState<BoardId>('classic');
   const [code, setCode] = useState('');
+  const [name, setName] = useState(() => loadStoredName(localStorage));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -35,17 +39,20 @@ export function ConnectScreen({ socket, onSession }: ConnectScreenProps): JSX.El
   async function handle(create: boolean): Promise<void> {
     setBusy(true);
     setError(null);
+    const trimmedName = name.trim();
     try {
       if (create) {
-        const ack = await createRoom(socket, board);
+        const ack = await createRoom(socket, board, trimmedName);
+        saveStoredName(localStorage, trimmedName);
         onSession({ roomCode: ack.roomCode, seat: ack.seat, token: ack.sessionToken });
       } else {
-        const trimmed = code.trim();
-        const ack = await joinRoom(socket, trimmed);
+        const trimmedCode = code.trim();
+        const ack = await joinRoom(socket, trimmedCode, trimmedName);
+        saveStoredName(localStorage, trimmedName);
         if ('spectator' in ack) {
-          onSession({ roomCode: trimmed, seat: null, token: null });
+          onSession({ roomCode: trimmedCode, seat: null, token: null });
         } else {
-          onSession({ roomCode: trimmed, seat: ack.seat, token: ack.sessionToken });
+          onSession({ roomCode: trimmedCode, seat: ack.seat, token: ack.sessionToken });
         }
       }
     } catch (err) {
@@ -76,6 +83,13 @@ export function ConnectScreen({ socket, onSession }: ConnectScreenProps): JSX.El
           ))}
         </div>
         <div className="scr-actions">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="你的名字（可选）"
+            aria-label="名字"
+            maxLength={12}
+          />
           <button type="button" onClick={() => handle(true)} disabled={busy}>
             创建房间
           </button>

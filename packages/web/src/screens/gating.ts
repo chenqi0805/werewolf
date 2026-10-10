@@ -166,7 +166,7 @@ export function strategyContextOf(view: PlayerView): StrategyContext | null {
   if (!canSpeakNow(view)) return null;
   const { role } = view.you;
   if (role === null) return null;
-  const dayRecords = speechByDayOf(view.log);
+  const dayRecords = speechByDayOf(view);
   if (dayRecords.length === 0) return null;
   return { role, dayRecords };
 }

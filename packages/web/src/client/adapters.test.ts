@@ -144,11 +144,23 @@ describe('speechMessagesOf', () => {
       { type: 'SPEECH_ORDER_SET', direction: 'cw', order: [3, 4] },
       { type: 'SPEECH_MADE', seat: 5, text: '我是预言家', context: 'speech' },
     ];
-    const messages = speechMessagesOf(log);
+    const messages = speechMessagesOf(view({ log }));
     expect(messages).toEqual([
       { id: 'sp-0', seat: 3, name: '3号', text: '过' },
       { id: 'sp-1', seat: 5, name: '5号', text: '我是预言家' },
     ]);
+  });
+
+  it('resolves transcript names from the view rows, falling back to the label', () => {
+    const v = view({
+      players: [row(3, { name: '阿明' }), row(5, { botName: '夜行者' })],
+      log: [
+        { type: 'SPEECH_MADE', seat: 3, text: '我是预言家', context: 'speech' },
+        { type: 'SPEECH_MADE', seat: 5, text: '过', context: 'speech' },
+        { type: 'SPEECH_MADE', seat: 6, text: '查杀7号', context: 'speech' },
+      ],
+    });
+    expect(speechMessagesOf(v).map((m) => m.name)).toEqual(['阿明', '夜行者', '6号']);
   });
 });
 
@@ -173,7 +185,7 @@ describe('speechByDayOf', () => {
   ];
 
   it('attributes speeches to the right day across all four contexts', () => {
-    const groups = speechByDayOf(multiDayLog);
+    const groups = speechByDayOf(view({ log: multiDayLog }));
     expect(groups).toHaveLength(2);
     expect(groups[0]?.day).toBe(1);
     expect(groups[0]?.records.map((r) => [r.context, r.seat, r.day])).toEqual([
@@ -190,8 +202,14 @@ describe('speechByDayOf', () => {
     expect(groups[1]?.records[0]).toMatchObject({ name: '9号', text: '第二天发言' });
   });
 
+  it('resolves record names from the view rows', () => {
+    const v = view({ players: [row(5, { name: '阿明' })], log: multiDayLog });
+    const flat = speechByDayOf(v).flatMap((group) => group.records);
+    expect(flat.filter((r) => r.seat === 5).map((r) => r.name)).toEqual(['阿明', '阿明']);
+  });
+
   it('captures every SPEECH_MADE exactly once, in log order', () => {
-    const flat = speechByDayOf(multiDayLog).flatMap((group) => group.records);
+    const flat = speechByDayOf(view({ log: multiDayLog })).flatMap((group) => group.records);
     expect(flat.map((r) => r.text)).toEqual([
       '竞选发言',
       '遗言内容',
@@ -210,7 +228,7 @@ describe('speechByDayOf', () => {
       { type: 'DAY_BROKE', dayNumber: 2 },
       { type: 'SPEECH_MADE', seat: 4, text: '第二天发言', context: 'speech' },
     ];
-    const groups = speechByDayOf(log);
+    const groups = speechByDayOf(view({ log }));
     expect(groups.map((g) => [g.day, g.records[0]?.text])).toEqual([
       [1, '第一天发言'],
       [2, '第二天发言'],
@@ -218,8 +236,8 @@ describe('speechByDayOf', () => {
   });
 
   it('returns no groups for a speechless log', () => {
-    expect(speechByDayOf([])).toEqual([]);
-    expect(speechByDayOf([{ type: 'DAY_BROKE', dayNumber: 1 }])).toEqual([]);
+    expect(speechByDayOf(view())).toEqual([]);
+    expect(speechByDayOf(view({ log: [{ type: 'DAY_BROKE', dayNumber: 1 }] }))).toEqual([]);
   });
 });
 
@@ -315,6 +333,20 @@ describe('seatViewsOf — lobby occupancy', () => {
     const seats = seatViewsOf(v);
     expect(seats.find((s) => s.seat === 1)?.occupied).toBe(true);
     expect(seats.find((s) => s.seat === 2)?.occupied).toBe(false);
+  });
+});
+
+describe('seatViewsOf — display names', () => {
+  it('prefers the chosen name, then bot nickname, then the seat label', () => {
+    const v = view({
+      players: [row(1, { name: '阿明' }), row(2, { botName: '夜行者' }), row(3)],
+    });
+    const names = seatViewsOf(v).map((s) => [s.seat, s.name]);
+    expect(names).toEqual([
+      [1, '阿明'],
+      [2, '夜行者'],
+      [3, '3号'],
+    ]);
   });
 });
 

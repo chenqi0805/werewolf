@@ -68,7 +68,7 @@ export function SpeechPanel({
                 .join(' ')}
             >
               <span className={styles.messageMeta}>
-                {message.seat}号 · {message.name}
+                {message.seat}号{message.name === `${message.seat}号` ? '' : ` · ${message.name}`}
               </span>
               <p className={styles.messageText}>{message.text}</p>
             </li>
