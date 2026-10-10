@@ -120,6 +120,12 @@ export interface PlayerView {
   log: GameEvent[];
   /** The step deadline the server is currently enforcing; null when none runs. */
   timer: TimerInfo | null;
+  /**
+   * Capability hint: the deployment has an email sender configured, so the
+   * lobby may show the 邮件邀请 affordance. Absent = unavailable — the
+   * room:invite ack would say the same, with no extra round trip spent.
+   */
+  inviteAvailable?: boolean;
 }
 
 /** Roles the table has learned from public events so far. */
@@ -223,6 +229,8 @@ export function viewFor(
   occupiedSeats?: ReadonlySet<Seat>,
   /** seat → nickname for the room's AI seats; unset reads as none. */
   bots?: ReadonlyMap<Seat, string>,
+  /** Invite capability hint from the gateway's boot-resolved sender. */
+  inviteAvailable?: boolean,
 ): PlayerView {
   const over = state.phase === 'game-over';
   const viewer = seat === null ? null : (state.players[seat] ?? null);
@@ -339,5 +347,6 @@ export function viewFor(
     step: stepView(state),
     log: eventsForSeat(state.log, seat),
     timer,
+    ...(inviteAvailable ? { inviteAvailable: true } : {}),
   };
 }

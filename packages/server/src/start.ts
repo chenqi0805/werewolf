@@ -1,6 +1,7 @@
 import { createApp } from './gateway';
 import type { AppOptions, TimerOverrides } from './gateway';
 import type { AssistantOptions } from './assistant';
+import { DEFAULT_INVITE_FROM, validatePublicBaseUrl, type InviteOptions } from './invites';
 import type { VoiceOptions } from './voice';
 import type { BotStrategy } from '@werewolf/bots';
 import { fetchLlmClient, LlmStrategy, ScriptedStrategy } from '@werewolf/bots';
@@ -15,6 +16,7 @@ const timers = parseTimers(process.env.WEREWOLF_TIMERS);
 const webDist = process.env.WEREWOLF_WEB_DIST;
 const voice = parseVoiceEnv();
 const assistant = parseAssistantEnv();
+const invites = parseInviteEnv();
 const botBrains = parseBotBrainEnv();
 // Rooms persist by default: the SQLite file lands under the working
 // directory (the hosted deployment's workdir), so rooms, tokens, speeches,
@@ -30,6 +32,7 @@ if (assistant !== null) {
   opts.postgame = assistant;
 }
 if (botBrains !== null) opts.botStrategyFactory = botBrains;
+if (invites !== null) opts.invites = invites;
 
 const app = createApp({ ...opts, dbPath });
 if (webDist !== undefined && webDist !== '') {
@@ -142,5 +145,39 @@ function parseAssistantEnv(): AssistantOptions | null {
     apiKey: process.env.WEREWOLF_ASSISTANT_API_KEY,
     model: process.env.WEREWOLF_ASSISTANT_MODEL,
     anthropicApiKey,
+  };
+}
+
+/**
+ * Email invites (room:invite → Resend's HTTPS API). RESEND_API_KEY arms the
+ * sender; WEREWOLF_PUBLIC_BASE_URL seeds every invite link and is validated
+ * at boot — links are built from this operator input, never from per-request
+ * Host headers, which a client can spoof. WEREWOLF_INVITE_FROM overrides the
+ * from-address (default: Resend's onboarding sender). Key unset → the event
+ * still answers, acking INVITE_UNAVAILABLE, and the lobby hides the
+ * affordance. A key without a base URL is an operator mistake and fails
+ * loudly here: links cannot be built without the public origin.
+ */
+function parseInviteEnv(): InviteOptions | null {
+  const apiKey = process.env.RESEND_API_KEY;
+  const hasKey = apiKey !== undefined && apiKey !== '';
+  if (!hasKey) {
+    // Even without a key, a set-but-garbage base URL is an operator mistake —
+    // fail loudly at boot rather than silently ignoring the input.
+    const raw = process.env.WEREWOLF_PUBLIC_BASE_URL;
+    if (raw !== undefined && raw !== '') validatePublicBaseUrl(raw);
+    return null;
+  }
+  const rawBaseUrl = process.env.WEREWOLF_PUBLIC_BASE_URL;
+  if (rawBaseUrl === undefined || rawBaseUrl === '') {
+    throw new Error(
+      'RESEND_API_KEY is set but WEREWOLF_PUBLIC_BASE_URL is missing — invite links need a public base URL.',
+    );
+  }
+  const from = process.env.WEREWOLF_INVITE_FROM;
+  return {
+    baseUrl: validatePublicBaseUrl(rawBaseUrl),
+    from: from !== undefined && from !== '' ? from : DEFAULT_INVITE_FROM,
+    apiKey,
   };
 }

@@ -125,3 +125,22 @@ export {
   type PostgameServer,
   type PostgameSocket,
 } from './postgame';
+export {
+  attachInvites,
+  resolveInviteSender,
+  resendMailSender,
+  buildInviteEmail,
+  validatePublicBaseUrl,
+  isValidInviteEmail,
+  InviteProviderError,
+  INVITE_ERROR_CODES,
+  MAX_EMAIL_LENGTH,
+  MAX_INVITES_PER_LOBBY,
+  DEFAULT_INVITE_FROM,
+  RESEND_ENDPOINT,
+  type MailSender,
+  type InviteOptions,
+  type InviteAck,
+  type InviteServer,
+  type InviteSocket,
+} from './invites';

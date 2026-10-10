@@ -11,6 +11,7 @@ import { eventsForSeat, viewFor, type PlayerView, type TimerInfo } from './view'
 import { EventStore, type TimerRowRaw } from './eventStore';
 import { restoreRooms, storeHooksFor } from './persistence';
 import { attachAssistant, type AssistantOptions, type StrategyReply } from './assistant';
+import { attachInvites, type InviteOptions } from './invites';
 import { attachPostgame, type PostgameOptions, type PostgameReply } from './postgame';
 import {
   currentSpeechSlot,
@@ -82,6 +83,8 @@ export interface ClientToServerEvents {
   'voice:frame': (chunk: ArrayBuffer) => void;
   /** Ask the strategy assistant; the caller's own view is the only prompt source. */
   'assistant:strategy': (ack: Ack<StrategyReply>) => void;
+  /** Email a join link to a friend; seated senders only, budgeted per seat. */
+  'room:invite': (email: string, ack: Ack<OkAck>) => void;
   /** Ask for the post-game 复盘; any room viewer may arm the shared generation. */
   'postgame:analysis': (ack: Ack<PostgameReply>) => void;
 }
@@ -127,6 +130,11 @@ export interface GatewayOptions {
    * ASSISTANT_UNAVAILABLE.
    */
   postgame?: PostgameOptions;
+  /**
+   * Email-invite sender config. Unset = the event still exists and every
+   * request acks INVITE_UNAVAILABLE; the lobby view hides the affordance.
+   */
+  invites?: InviteOptions;
 }
 
 /**
@@ -156,6 +164,9 @@ export function attachGateway(
   );
   attachAssistant(io, registry, opts?.assistant ?? {});
   attachPostgame(io, registry, opts?.postgame ?? {});
+  // The returned flag is the lobby's capability hint — the view says whether
+  // the 邮件邀请 affordance may show, with no extra round trip.
+  const invitesAvailable = attachInvites(io, registry, opts?.invites);
 
   function bind(socket: GatewaySocket, roomCode: string, seat: Seat | null): void {
     socket.data.roomCode = roomCode;
@@ -195,6 +206,7 @@ export function attachGateway(
         deadlines.get(room.code) ?? null,
         room.occupiedSeats(),
         room.botSeats(),
+        invitesAvailable,
       ),
     );
   }
