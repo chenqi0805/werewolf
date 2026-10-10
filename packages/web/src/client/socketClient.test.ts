@@ -9,6 +9,7 @@ import type {
 import type { Socket } from 'socket.io-client';
 
 import {
+  ACK_TIMEOUT_MS,
   AckError,
   createRoom,
   joinRoom,
@@ -25,35 +26,46 @@ type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 /**
  * Minimal socket stand-in: records emitted args and, when a test asks,
- * answers the ack callback the wrappers register.
+ * answers the ack callback the wrappers register. Mirrors the runtime
+ * contract of a socket.timeout() ack: the callback takes (err, resp), with
+ * err = null on a server answer — timeout/disconnect settle err with a
+ * bare Error instead.
  */
 function fakeSocket(answer?: (event: string, args: unknown[]) => void): GameSocket & {
   emitted: Array<{ event: string; args: unknown[] }>;
+  timeouts: number[];
 } {
   const emitted: Array<{ event: string; args: unknown[] }> = [];
+  const timeouts: number[] = [];
+  const emit = (event: string, ...args: unknown[]): void => {
+    emitted.push({ event, args });
+    answer?.(event, args);
+  };
   const socket = {
     emitted,
-    emit: (event: string, ...args: unknown[]): void => {
-      emitted.push({ event, args });
-      answer?.(event, args);
+    timeouts,
+    timeout: (ms: number): { emit: typeof emit } => {
+      timeouts.push(ms);
+      return { emit };
     },
+    emit,
   };
   return socket as unknown as GameSocket & typeof socket;
 }
 
 /** The last arg of every C2S emit is the ack callback. */
-function ackOf(socket: ReturnType<typeof fakeSocket>): (resp: unknown) => void {
+function ackOf(socket: ReturnType<typeof fakeSocket>): (err: Error | null, resp?: unknown) => void {
   const last = socket.emitted[socket.emitted.length - 1];
   if (!last) throw new Error('nothing emitted');
   const ack = last.args[last.args.length - 1];
   if (typeof ack !== 'function') throw new Error('no ack registered');
-  return ack as (resp: unknown) => void;
+  return ack as (err: Error | null, resp?: unknown) => void;
 }
 
 describe('socket client wrappers', () => {
   it('resolves createRoom with the ack payload', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)({
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, {
         roomCode: 'AB2C',
         seat: 1,
         sessionToken: 'tok',
@@ -69,7 +81,7 @@ describe('socket client wrappers', () => {
 
   it('rejects with AckError carrying the server code', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)({ error: 'ROOM_FULL' });
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, { error: 'ROOM_FULL' });
     });
     const error = await joinRoom(socket, 'AB2C').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AckError);
@@ -98,17 +110,30 @@ describe('socket client wrappers', () => {
 });
 
 describe('AckError promise behavior', () => {
-  it('stays pending until the ack fires', async () => {
+  it('arms a timeout budget on every acked emit', () => {
     const socket = fakeSocket();
-    let settled = false;
-    const pending = createRoom(socket).then((v) => {
-      settled = true;
-      return v;
-    });
-    expect(settled).toBe(false);
-    ackOf(socket)({ roomCode: 'AB2C', seat: 1, sessionToken: 'tok' });
-    await pending;
-    expect(settled).toBe(true);
+    void createRoom(socket).catch(() => undefined);
+    expect(socket.timeouts).toEqual([ACK_TIMEOUT_MS]);
+  });
+
+  it('rejects with AckError TIMEOUT when the socket disconnects mid-ack', async () => {
+    const socket = fakeSocket();
+    const pending = createRoom(socket);
+    // socket.io settles a timeout-decorated pending ack with a bare Error
+    // when the transport drops before the server answers.
+    ackOf(socket)(new Error('socket has been disconnected'));
+    const error = await pending.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AckError);
+    expect((error as AckError).code).toBe('TIMEOUT');
+  });
+
+  it('rejects with AckError TIMEOUT when the ack budget expires', async () => {
+    const socket = fakeSocket();
+    const pending = createRoom(socket);
+    ackOf(socket)(new Error('operation has timed out'));
+    const error = await pending.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AckError);
+    expect((error as AckError).code).toBe('TIMEOUT');
   });
 });
 
@@ -121,7 +146,7 @@ describe('requestStrategy', () => {
 
   it('emits assistant:strategy and resolves with the reply', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)(reply);
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, reply);
     });
     await expect(requestStrategy(socket)).resolves.toEqual(reply);
     expect(socket.emitted[0]?.event).toBe('assistant:strategy');
@@ -129,7 +154,9 @@ describe('requestStrategy', () => {
 
   it('rejects with AckError when the assistant is unavailable', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)({ error: 'ASSISTANT_UNAVAILABLE' });
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, {
+        error: 'ASSISTANT_UNAVAILABLE',
+      });
     });
     const error = await requestStrategy(socket).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AckError);
@@ -140,7 +167,7 @@ describe('requestStrategy', () => {
 describe('sendInvite', () => {
   it('emits room:invite with the address and resolves with the ok ack', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)({ ok: true });
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, { ok: true });
     });
     await expect(sendInvite(socket, 'friend@example.com')).resolves.toEqual({ ok: true });
     expect(socket.emitted[0]?.event).toBe('room:invite');
@@ -149,7 +176,9 @@ describe('sendInvite', () => {
 
   it('rejects with AckError carrying the server code', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)({ error: 'INVITE_RATE_LIMITED' });
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, {
+        error: 'INVITE_RATE_LIMITED',
+      });
     });
     const error = await sendInvite(socket, 'friend@example.com').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AckError);
@@ -160,7 +189,7 @@ describe('sendInvite', () => {
 describe('leaveRoom', () => {
   it('emits room:leave and resolves with the ok ack', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)({ ok: true });
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, { ok: true });
     });
     await expect(leaveRoom(socket)).resolves.toEqual({ ok: true });
     expect(socket.emitted[0]?.event).toBe('room:leave');
@@ -168,7 +197,9 @@ describe('leaveRoom', () => {
 
   it('rejects with AckError carrying the server code', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)({ error: 'ALREADY_STARTED' });
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, {
+        error: 'ALREADY_STARTED',
+      });
     });
     const error = await leaveRoom(socket).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AckError);
@@ -193,7 +224,7 @@ describe('requestPostgameAnalysis', () => {
 
   it('emits postgame:analysis and resolves with the shared review', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)(reply);
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, reply);
     });
     await expect(requestPostgameAnalysis(socket)).resolves.toEqual(reply);
     expect(socket.emitted[0]?.event).toBe('postgame:analysis');
@@ -201,7 +232,9 @@ describe('requestPostgameAnalysis', () => {
 
   it('rejects with AckError when the game is not over', async () => {
     const socket = fakeSocket((_event, args) => {
-      (args[args.length - 1] as (resp: unknown) => void)({ error: 'NOT_GAME_OVER' });
+      (args[args.length - 1] as (err: null, resp: unknown) => void)(null, {
+        error: 'NOT_GAME_OVER',
+      });
     });
     const error = await requestPostgameAnalysis(socket).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AckError);

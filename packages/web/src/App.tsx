@@ -17,12 +17,24 @@ interface SessionDraft {
 }
 
 /**
+ * One socket per page, memoized at module scope: React 18 StrictMode
+ * double-invokes the useState initializer in dev, and a plain initializer
+ * would open two auto-connecting sockets while keeping only one — a leaked
+ * live gateway connection per page load. Production builds never
+ * double-invoke; the memoization is inert there.
+ */
+let gameSocket: GameSocket | null = null;
+
+/**
  * App shell: one socket for the page lifetime, the live game store, and the
  * screen router. Identity persists in localStorage — every (re)connect runs
  * the rejoin handshake so a refresh or transport drop reattaches the seat.
  */
 export function App(): JSX.Element {
-  const [socket] = useState<GameSocket>(() => createGameSocket());
+  const [socket] = useState<GameSocket>(() => {
+    if (gameSocket === null) gameSocket = createGameSocket();
+    return gameSocket;
+  });
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [dropped, setDropped] = useState(false);
   const { store, send } = useGame(socket);
