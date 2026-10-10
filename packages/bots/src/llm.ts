@@ -106,7 +106,12 @@ export function isLegalFor(view: PlayerView, action: PlayerAction): boolean {
     case 'SHERIFF_PASS':
       return kind === 'sheriff-vote' || (kind === 'pk-vote' && view.step.voteKind === 'sheriff');
     case 'SPEAK':
-      return kind === 'speech' || kind === 'last-words' || kind === 'pk-speech';
+      return (
+        kind === 'speech' ||
+        kind === 'last-words' ||
+        kind === 'pk-speech' ||
+        kind === 'sheriff-speech'
+      );
     case 'EXILE_VOTE':
       return kind === 'exile-vote' || (kind === 'pk-vote' && view.step.voteKind === 'exile');
     case 'HUNTER_SHOOT':
@@ -118,9 +123,19 @@ export function isLegalFor(view: PlayerView, action: PlayerAction): boolean {
     case 'SET_SPEECH_DIRECTION':
       return kind === 'speech';
     case 'WOLF_EXPLODE':
-      // 狼人自爆: LLM-side legality (wolf camp + open window) lands with the
-      // bots wiring PR — until then no LLM bot ever picks it.
-      return false;
+      // 狼人自爆 — plain wolves only (the 白狼王 keeps his targeted
+      // destruct), and only while a voice is live: the signup window and
+      // every speech phase; ballots are simultaneous and never interrupted.
+      // Coarse client-side pre-validation — the engine re-checks camp,
+      // liveness, and the window authoritatively.
+      return (
+        view.you.role === 'werewolf' &&
+        view.you.alive &&
+        (kind === 'sheriff-signup' ||
+          kind === 'sheriff-speech' ||
+          kind === 'speech' ||
+          kind === 'pk-speech')
+      );
   }
 }
 
