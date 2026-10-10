@@ -340,6 +340,102 @@ describe('scripted strategy: votes', () => {
   });
 });
 
+// — the election ——————————————————————————————————————————————————————————
+
+describe('scripted strategy: the election', () => {
+  it('the seer always runs; every other role stays off the platform', async () => {
+    const signup = (role: YouView['role'], extras: Partial<YouView> = {}) =>
+      view({
+        phase: 'sheriff-signup',
+        you: you(3, role, extras),
+        step: { kind: 'sheriff-signup', candidates: [] },
+      });
+    expect(await decide(signup('seer'))).toEqual({
+      action: { type: 'SHERIFF_SIGNUP', actor: 3 },
+    });
+    const others = [
+      'werewolf',
+      'white_wolf_king',
+      'witch',
+      'guard',
+      'hunter',
+      'idiot',
+      'villager',
+    ] as const;
+    for (const role of others) {
+      expect(await decide(signup(role)), `role ${role} must stay off the platform`).toBeNull();
+    }
+  });
+
+  it('a dead seer and an already-standing seer stay quiet', async () => {
+    const dead = view({
+      phase: 'sheriff-signup',
+      you: you(3, 'seer', { alive: false }),
+      step: { kind: 'sheriff-signup', candidates: [] },
+    });
+    expect(await decide(dead)).toBeNull();
+
+    const standing = view({
+      phase: 'sheriff-signup',
+      you: you(3, 'seer'),
+      step: { kind: 'sheriff-signup', candidates: [3] },
+    });
+    expect(await decide(standing)).toBeNull();
+  });
+
+  it('candidates give the fixed 警上发言 in their slot and nothing otherwise', async () => {
+    const step: StepView = { kind: 'sheriff-speech', queue: [2, 4], cursor: 1 };
+    const notMine = view({ phase: 'sheriff-speech', you: you(2, 'seer'), step });
+    expect(await decide(notMine)).toBeNull();
+
+    const mine = view({ phase: 'sheriff-speech', you: you(4, 'seer'), step });
+    const decision = await decide(mine);
+    if (decision !== null && decision.action.type === 'SPEAK') {
+      expect(decision.action.text).toContain('预言家');
+      expect(decision.action.text).toContain('警下');
+    } else {
+      expect.fail('expected a SPEAK decision');
+    }
+  });
+
+  it('警下 PK revotes for sheriff back the lowest living candidate, not a fellow elector', async () => {
+    const log: GameEvent[] = [
+      { type: 'SHERIFF_SIGNUP_MADE', seat: 2 },
+      { type: 'SHERIFF_SIGNUP_MADE', seat: 4 },
+    ];
+    const v = view({
+      phase: 'pk-vote',
+      you: you(5, 'villager'),
+      step: { kind: 'pk-vote', electorate: [1, 5], voteKind: 'sheriff' },
+      log,
+    });
+    // The old ballot path voted the lowest fellow elector (seat 1) — the
+    // engine rejects any sheriff target outside the standing candidates.
+    expect(await decide(v)).toEqual({
+      action: { type: 'SHERIFF_VOTE', actor: 5, target: 2 },
+    });
+  });
+
+  it('scripted wolves never explode, in any explode window', async () => {
+    const windows: { phase: PlayerView['phase']; step: StepView }[] = [
+      { phase: 'sheriff-signup', step: { kind: 'sheriff-signup', candidates: [] } },
+      { phase: 'sheriff-speech', step: { kind: 'sheriff-speech', queue: [5], cursor: 0 } },
+      { phase: 'speech', step: { kind: 'speech', order: [5], cursor: 0 } },
+      { phase: 'pk-speech', step: { kind: 'pk-speech', tied: [5], cursor: 0 } },
+    ];
+    for (const { phase, step } of windows) {
+      const v = view({
+        phase,
+        you: you(5, 'werewolf', { wolfPack: [3, 5] }),
+        players: [row(3), row(5)],
+        step,
+      });
+      const decision = await decide(v);
+      expect(decision?.action.type, `step ${step.kind}`).not.toBe('WOLF_EXPLODE');
+    }
+  });
+});
+
 // — speech —————————————————————————————————————————————————————————————————
 
 describe('scripted strategy: speech', () => {
