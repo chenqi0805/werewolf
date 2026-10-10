@@ -1,5 +1,6 @@
 import { createApp } from './gateway';
 import type { AppOptions, TimerOverrides } from './gateway';
+import { parseLimits } from './limits';
 import type { AssistantOptions } from './assistant';
 import { DEFAULT_INVITE_FROM, validatePublicBaseUrl, type InviteOptions } from './invites';
 import type { VoiceOptions } from './voice';
@@ -13,6 +14,7 @@ import { resolve } from 'node:path';
 // the built client itself (WEREWOLF_WEB_DIST) behind one origin.
 const port = Number(process.env.WEREWOLF_PORT ?? process.env.PORT ?? 3000);
 const timers = parseTimers(process.env.WEREWOLF_TIMERS);
+const limits = parseLimits(process.env.WEREWOLF_LIMITS);
 const webDist = process.env.WEREWOLF_WEB_DIST;
 const voice = parseVoiceEnv();
 const assistant = parseAssistantEnv();
@@ -25,6 +27,7 @@ const dbPath = process.env.WEREWOLF_DB_PATH ?? resolve('data', 'werewolf.db');
 
 const opts: AppOptions = {};
 if (timers !== null) opts.timers = timers;
+if (limits !== null) opts.limits = limits;
 if (voice !== null) opts.voice = voice;
 if (assistant !== null) {
   opts.assistant = assistant;

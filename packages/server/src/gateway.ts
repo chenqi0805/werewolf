@@ -194,6 +194,8 @@ export function attachGateway(
   const joinLimiter = new IpWindowLimiter(limits.joinPerWindow, limits.windowMs);
   const roomSockets = new Map<string, Set<GatewaySocket>>();
   const roomTimers = new Map<string, NodeJS.Timeout>();
+  /** Pending empty-lobby evictions, keyed by room code. */
+  const evictTimers = new Map<string, NodeJS.Timeout>();
   /** The step deadline currently advertised to joining/rejoining sockets. */
   const deadlines = new Map<string, TimerInfo>();
   const voiceHub = new VoiceHub(
@@ -223,6 +225,8 @@ export function attachGateway(
       roomSockets.set(roomCode, set);
     }
     set.add(socket);
+    // Occupancy returned: a pending empty-lobby eviction is cancelled.
+    if (set.size === 1) cancelEvict(roomCode);
   }
 
   function unbind(socket: GatewaySocket): void {
@@ -233,7 +237,52 @@ export function attachGateway(
     const set = roomSockets.get(code);
     if (!set) return;
     set.delete(socket);
-    if (set.size === 0) roomSockets.delete(code);
+    if (set.size === 0) {
+      roomSockets.delete(code);
+      // Last socket left: the room ages out unless someone returns.
+      scheduleEvict(code);
+    }
+  }
+
+  /** Rooms with at least one connected socket — the live-lobby census. */
+  function liveRoomCount(): number {
+    let live = 0;
+    for (const set of roomSockets.values()) {
+      if (set.size > 0) live += 1;
+    }
+    return live;
+  }
+
+  /**
+   * The empty-lobby TTL (audit F2): drop the room entirely, releasing its
+   * code and any invite headroom it armed (an evicted room answers
+   * NOT_IN_ROOM, so it can spend nothing further). Clears the room's phase
+   * clock bookkeeping — a dead room has no one left to tick for.
+   */
+  function evictRoom(code: string): void {
+    evictTimers.delete(code);
+    const timer = roomTimers.get(code);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      roomTimers.delete(code);
+    }
+    deadlines.delete(code);
+    registry.remove(code);
+  }
+
+  /** Occupancy fell to zero — arm the TTL (an occupant return cancels it). */
+  function scheduleEvict(code: string): void {
+    cancelEvict(code);
+    const timer = setTimeout(() => evictRoom(code), limits.emptyLobbyTtlMs);
+    evictTimers.set(code, timer);
+  }
+
+  /** Occupancy returned — cancel a pending empty-lobby eviction. */
+  function cancelEvict(code: string): void {
+    const timer = evictTimers.get(code);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    evictTimers.delete(code);
   }
 
   function errorPayload(error: unknown): ErrorPayload {
@@ -342,6 +391,9 @@ export function attachGateway(
    * longer matches the replayed state) falls back to a fresh full clock.
    */
   function rearmRestored(room: Room, timer: TimerRowRaw | null): void {
+    // A restored room boots with nobody connected: it ages out on the TTL
+    // unless a client (or its bot runner) reattaches — bind cancels it.
+    scheduleEvict(room.code);
     const key = clockKey(room.state);
     if (key === null) return;
     if (timer !== null && timer.timerKey === key) {
@@ -444,6 +496,12 @@ export function attachGateway(
         (typeof requested !== 'string' || !Object.hasOwn(BOARDS, requested))
       ) {
         ack({ error: 'INVALID_BOARD' });
+        return;
+      }
+      // Global live-lobby ceiling: reject before minting, so a rejected
+      // create leaves no room and no reserved code behind.
+      if (liveRoomCount() >= limits.maxLiveRooms) {
+        ack({ error: 'ROOM_LIMIT' });
         return;
       }
       try {
@@ -664,6 +722,8 @@ export function attachGateway(
     dispose: () => {
       for (const timer of roomTimers.values()) clearTimeout(timer);
       roomTimers.clear();
+      for (const timer of evictTimers.values()) clearTimeout(timer);
+      evictTimers.clear();
       deadlines.clear();
       voiceHub.dropAll();
     },
