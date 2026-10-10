@@ -69,6 +69,15 @@ export function App(): JSX.Element {
     setRoomCode(draft.roomCode);
   }
 
+  // The 返回主页 contract, shared by every screen that offers the way out:
+  // the stale session must not reattach on the next connect. No room:leave
+  // here — exit is client-side only (spectators hold no seat to free, and a
+  // finished room keeps its seat rows regardless).
+  function exitToMain(): void {
+    clearSession(window.localStorage);
+    setRoomCode(null);
+  }
+
   // Night board dark, day board light — the phase drives the theme.
   const theme = view?.phase === 'night' ? 'dark' : 'light';
 
@@ -84,22 +93,13 @@ export function App(): JSX.Element {
       </main>
     );
   } else if (view.step.kind === 'lobby') {
-    screen = (
-      <LobbyScreen
-        view={view}
-        roomCode={roomCode}
-        socket={socket}
-        onQuit={() => {
-          // The seat is freed server-side; the stale token must not reattach.
-          clearSession(window.localStorage);
-          setRoomCode(null);
-        }}
-      />
-    );
+    screen = <LobbyScreen view={view} roomCode={roomCode} socket={socket} onQuit={exitToMain} />;
   } else if (view.step.kind === 'game-over') {
-    screen = <GameOverScreen view={view} socket={socket} />;
+    screen = <GameOverScreen view={view} socket={socket} onExit={exitToMain} />;
   } else {
-    screen = <GameScreen view={view} roomCode={roomCode} send={send} socket={socket} />;
+    screen = (
+      <GameScreen view={view} roomCode={roomCode} send={send} socket={socket} onExit={exitToMain} />
+    );
   }
 
   return (

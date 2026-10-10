@@ -119,6 +119,27 @@
   flex-wrap: wrap;
 }
 
+.scr-actions--center {
+  justify-content: center;
+}
+
+/* The one prominent way out: 返回主页 on the game-over and spectator panels. */
+.scr-exit {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.scr-exit:hover {
+  background: var(--surface-hover);
+}
+
 .scr-empty {
   color: var(--text-muted);
   font-size: var(--text-sm);
