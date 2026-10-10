@@ -17,6 +17,8 @@ function row(seat: Seat, overrides: Partial<PlayerRow> = {}): PlayerRow {
     revealedIdiot: false,
     voteWeight: 1,
     occupied: true,
+    isBot: false,
+    botName: null,
     role: null,
     ...overrides,
   };
@@ -29,7 +31,7 @@ function view(opts: {
   log?: GameEvent[];
 }): PlayerView {
   return {
-    phase: opts.step.kind === 'game-over' ? 'game-over' : 'day',
+    phase: opts.step.kind === 'game-over' ? 'game-over' : 'speech',
     dayNumber: 1,
     winner: null,
     you: opts.you,
@@ -197,7 +199,11 @@ describe('LlmStrategy', () => {
     const chat = vi.fn().mockRejectedValue(new Error('connection refused'));
     const fb = fallbackOf({ action: { type: 'WOLF_KILL', actor: 3, target: 5 } });
     const strategy = new LlmStrategy(fb.strategy, { chat });
-    expect((await strategy.decide(ctxOf(wolfView)))?.action.target).toBe(5);
+    expect((await strategy.decide(ctxOf(wolfView)))?.action).toEqual({
+      type: 'WOLF_KILL',
+      actor: 3,
+      target: 5,
+    });
     expect(fb.calls()).toBe(1);
   });
 

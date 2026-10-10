@@ -16,6 +16,8 @@ function row(seat: Seat, overrides: Partial<PlayerRow> = {}): PlayerRow {
     revealedIdiot: false,
     voteWeight: 1,
     occupied: true,
+    isBot: false,
+    botName: null,
     role: null,
     ...overrides,
   };
