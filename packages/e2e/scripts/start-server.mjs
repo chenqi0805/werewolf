@@ -35,6 +35,11 @@ const child = spawn('npm', ['run', 'start', '-w', '@werewolf/server'], {
         'badge-pass': 3000,
       }),
     WEREWOLF_WEB_DIST: path.resolve(root, 'packages/web/dist'),
+    // The e2e suite asserts the lobby's invite affordance is hidden, so the
+    // boot is pinned provider-free regardless of the invoking shell's env
+    // (parseInviteEnv: an empty key reads as unconfigured).
+    RESEND_API_KEY: '',
+    WEREWOLF_PUBLIC_BASE_URL: '',
   },
   stdio: 'inherit',
 });

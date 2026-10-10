@@ -52,6 +52,7 @@ export const SELECTORS = {
   destructControl: 'section[aria-label="白狼王自爆"]',
   addBotButton: 'button:has-text("添加AI玩家")',
   boardOptionWolfKing: 'button.scr-board-option:has-text("白狼王局")',
+  inviteGroup: '[aria-label="邮件邀请"]',
 } as const;
 
 /** Seat number carried in a chip's aria-label (`"3号 名字…"`). */

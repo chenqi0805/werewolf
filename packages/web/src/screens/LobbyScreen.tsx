@@ -3,10 +3,28 @@ import type { JSX } from 'react';
 import type { PlayerView } from '@werewolf/server';
 
 import { occupiedCountOf, roomErrorText, seatViewsOf } from '../client/adapters';
-import { addBot, leaveRoom, removeBot, startGame, type GameSocket } from '../client/socketClient';
+import { isValidInviteEmail } from '../client/invite';
+import {
+  AckError,
+  addBot,
+  leaveRoom,
+  removeBot,
+  sendInvite,
+  startGame,
+  type GameSocket,
+} from '../client/socketClient';
 import { SeatGrid } from '../components';
 import type { SeatView } from '../types';
 import { TutorialScreen } from './TutorialScreen';
+
+/** zh copy for the room:invite ack codes; room codes fall through to roomErrorText. */
+const INVITE_ERROR_TEXT: Record<string, string> = {
+  INVALID_EMAIL: '邮箱地址无效，请检查',
+  INVITE_UNAVAILABLE: '邮件邀请暂未配置',
+  INVITE_BUSY: '上一封邀请还在发送，请稍候',
+  INVITE_RATE_LIMITED: '本局邀请次数已用完',
+  INVITE_ERROR: '邀请发送失败，请重试',
+};
 
 interface LobbyScreenProps {
   view: PlayerView;
@@ -25,6 +43,9 @@ export function LobbyScreen({ view, roomCode, socket, onQuit }: LobbyScreenProps
   const joined = occupiedCountOf(seats);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
 
   async function handleStart(): Promise<void> {
     setActionError(null);
@@ -63,6 +84,28 @@ export function LobbyScreen({ view, roomCode, socket, onQuit }: LobbyScreenProps
     }
   }
 
+  async function handleInvite(): Promise<void> {
+    setInviteSentTo(null);
+    setActionError(null);
+    const email = inviteEmail.trim();
+    // The obvious-mistake gate: a malformed address never leaves the browser.
+    if (!isValidInviteEmail(email)) {
+      setActionError(INVITE_ERROR_TEXT['INVALID_EMAIL'] ?? null);
+      return;
+    }
+    setInviteBusy(true);
+    try {
+      await sendInvite(socket, email);
+      setInviteEmail('');
+      setInviteSentTo(email);
+    } catch (err) {
+      const code = err instanceof AckError ? err.code : 'INVITE_ERROR';
+      setActionError(INVITE_ERROR_TEXT[code] ?? roomErrorText(code));
+    } finally {
+      setInviteBusy(false);
+    }
+  }
+
   if (showTutorial) {
     return <TutorialScreen onClose={() => setShowTutorial(false)} />;
   }
@@ -86,6 +129,31 @@ export function LobbyScreen({ view, roomCode, socket, onQuit }: LobbyScreenProps
         <p className="scr-subtitle">
           把房间号发给朋友，人不满可用 AI 补位，人满后任意玩家可以开局。
         </p>
+        {view.inviteAvailable === true && (
+          <div role="group" aria-label="邮件邀请" className="scr-row">
+            <input
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="朋友的邮箱"
+              aria-label="朋友邮箱"
+              type="email"
+              maxLength={254}
+              disabled={inviteBusy}
+            />
+            <button
+              type="button"
+              onClick={handleInvite}
+              disabled={inviteBusy || inviteEmail.trim() === ''}
+            >
+              发送邀请
+            </button>
+          </div>
+        )}
+        {inviteSentTo !== null && (
+          <p className="scr-caption" role="status">
+            邀请已发送给 {inviteSentTo}
+          </p>
+        )}
         <SeatGrid seats={seats} />
         <div className="scr-row">
           <button type="button" onClick={handleAddBot} disabled={joined >= 12}>

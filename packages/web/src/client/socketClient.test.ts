@@ -17,6 +17,7 @@ import {
   requestPostgameAnalysis,
   requestStrategy,
   sendAction,
+  sendInvite,
   startGame,
 } from './socketClient';
 
@@ -133,6 +134,26 @@ describe('requestStrategy', () => {
     const error = await requestStrategy(socket).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AckError);
     expect((error as AckError).code).toBe('ASSISTANT_UNAVAILABLE');
+  });
+});
+
+describe('sendInvite', () => {
+  it('emits room:invite with the address and resolves with the ok ack', async () => {
+    const socket = fakeSocket((_event, args) => {
+      (args[args.length - 1] as (resp: unknown) => void)({ ok: true });
+    });
+    await expect(sendInvite(socket, 'friend@example.com')).resolves.toEqual({ ok: true });
+    expect(socket.emitted[0]?.event).toBe('room:invite');
+    expect(socket.emitted[0]?.args[0]).toBe('friend@example.com');
+  });
+
+  it('rejects with AckError carrying the server code', async () => {
+    const socket = fakeSocket((_event, args) => {
+      (args[args.length - 1] as (resp: unknown) => void)({ error: 'INVITE_RATE_LIMITED' });
+    });
+    const error = await sendInvite(socket, 'friend@example.com').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AckError);
+    expect((error as AckError).code).toBe('INVITE_RATE_LIMITED');
   });
 });
 

@@ -39,3 +39,26 @@ test('lobby shows true occupancy and quit frees the seat', async ({ browser }) =
   await creatorContext.close();
   await joinerContext.close();
 });
+
+// Provider-free assertion: the e2e boot pins the invite env unconfigured
+// (scripts/start-server.mjs), so the view carries no inviteAvailable hint and
+// the 邮件邀请 affordance must not render at all.
+test('no email sender configured: the lobby hides the invite affordance', async ({ browser }) => {
+  // Only the suite's own boot guarantees an unconfigured sender; a hosted
+  // deployment (WEREWOLF_BASE_URL) may legitimately show the affordance.
+  test.skip(Boolean(process.env.WEREWOLF_BASE_URL), 'a hosted deployment may have a sender');
+  const context = await browser.newContext();
+  const creator = await context.newPage();
+  await creator.goto('/');
+  await creator.locator(SELECTORS.createRoomButton).click();
+  await expect(creator.locator(SELECTORS.roomCode)).toBeVisible();
+  await expect(creator.locator(SELECTORS.inviteGroup)).toHaveCount(0);
+  await context.close();
+});
+
+// The link landing is pure client behavior — no room needed: the connect
+// form's code field pre-fills from ?room=CODE on mount.
+test('an invite link landing pre-fills the room code', async ({ page }) => {
+  await page.goto('/?room=AB2C');
+  await expect(page.locator(SELECTORS.roomCodeInput)).toHaveValue('AB2C');
+});
