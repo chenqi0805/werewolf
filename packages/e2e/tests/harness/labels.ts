@@ -13,6 +13,8 @@ export const ROLE_LABELS: Record<string, Role> = {
   预言家: 'seer',
   女巫: 'witch',
   猎人: 'hunter',
+  守卫: 'guard',
+  白狼王: 'white_wolf_king',
   白痴: 'idiot',
 };
 
@@ -48,6 +50,10 @@ export const SELECTORS = {
   badgeDestroyButton: 'button:has-text("撕毁警徽")',
   signupButton: 'button:has-text("上警")',
   directionPrompt: ':text("警长决定发言方向")',
+  guardPad: 'section[aria-label="守卫守护"]',
+  destructControl: 'section[aria-label="白狼王自爆"]',
+  addBotButton: 'button:has-text("添加AI玩家")',
+  boardOptionWolfKing: 'button.scr-board-option:has-text("白狼王局")',
 } as const;
 
 /** Seat number carried in a chip's aria-label (`"3号 名字…"`). */

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { JSX } from 'react';
-import type { Seat } from '@werewolf/engine';
+import type { BoardId, Seat } from '@werewolf/engine';
 
 import { AckError, createRoom, joinRoom, type GameSocket } from '../client/socketClient';
+import { BOARD_OPTIONS } from '../boardOptions';
 
 interface ConnectScreenProps {
   socket: GameSocket;
@@ -21,6 +22,7 @@ const errorText: Record<string, string> = {
  * persisted by the App before the room screen mounts.
  */
 export function ConnectScreen({ socket, onSession }: ConnectScreenProps): JSX.Element {
+  const [board, setBoard] = useState<BoardId>('classic');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,7 +37,7 @@ export function ConnectScreen({ socket, onSession }: ConnectScreenProps): JSX.El
     setError(null);
     try {
       if (create) {
-        const ack = await createRoom(socket);
+        const ack = await createRoom(socket, board);
         onSession({ roomCode: ack.roomCode, seat: ack.seat, token: ack.sessionToken });
       } else {
         const trimmed = code.trim();
@@ -56,8 +58,23 @@ export function ConnectScreen({ socket, onSession }: ConnectScreenProps): JSX.El
   return (
     <main className="scr-page scr-page--flush">
       <section className="scr-panel">
-        <h1 className="scr-title">狼人杀 · 12人标准局</h1>
+        <h1 className="scr-title">狼人杀</h1>
         <p className="scr-subtitle">创建房间后把房间号分享给其他 11 位玩家。</p>
+        <div role="group" aria-label="选择棋盘" className="scr-board-picker">
+          {BOARD_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className="scr-board-option"
+              aria-pressed={board === option.id}
+              onClick={() => setBoard(option.id)}
+              disabled={busy}
+            >
+              <span className="scr-board-name">{option.name}</span>
+              <span className="scr-board-lineup">{option.lineup}</span>
+            </button>
+          ))}
+        </div>
         <div className="scr-actions">
           <button type="button" onClick={() => handle(true)} disabled={busy}>
             创建房间

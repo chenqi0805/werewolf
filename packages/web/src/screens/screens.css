@@ -127,3 +127,36 @@
   border-radius: var(--radius-md);
   text-align: center;
 }
+
+.scr-board-picker {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.scr-board-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.scr-board-option[aria-pressed='true'] {
+  border-color: var(--accent-fg, var(--text-primary));
+  box-shadow: 0 0 0 1px var(--accent-fg, var(--text-primary));
+}
+
+.scr-board-name {
+  font-weight: var(--weight-semibold);
+}
+
+.scr-board-lineup {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}

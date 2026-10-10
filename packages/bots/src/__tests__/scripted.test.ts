@@ -38,6 +38,7 @@ function view(opts: ViewOpts): PlayerView {
     phase: opts.phase ?? 'night',
     dayNumber: opts.dayNumber ?? 1,
     winner: null,
+    board: 'classic',
     you: opts.you,
     players,
     step: opts.step,

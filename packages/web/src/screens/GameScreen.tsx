@@ -19,6 +19,8 @@ import {
   DayLog,
   SeatGrid,
   SeatPicker,
+  DestructControl,
+  GuardPad,
   SeerPad,
   SpectatorView,
   SpeechHistory,
@@ -34,6 +36,8 @@ import {
   canVoteNow,
   directionNeeded,
   hunterShotState,
+  guardTargets,
+  destructState,
   nightPadKind,
   nightTargets,
   poisonTargets,
@@ -69,7 +73,7 @@ function CandidateList({ seats }: { seats: SeatView[] }): JSX.Element {
  */
 export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): JSX.Element {
   const seats: SeatView[] = seatViewsOf(view);
-  const entries = logToEntries(view.log);
+  const entries = logToEntries(view.log, view.board);
   const speechGroups = speechByDayOf(view.log);
   const { you } = view;
   const step = view.step;
@@ -99,11 +103,12 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
   const nightKind = nightPadKind(view);
   const signup = sheriffSignupState(view);
   const shot = hunterShotState(view);
+  const destruct = destructState(view);
   const votes = voteContextOf(view);
   const speechKind = speechContextOf(view);
   const strategy = strategyContextOf(view);
 
-  function onPick(kind: 'kill' | 'poison' | 'check' | 'shoot') {
+  function onPick(kind: 'kill' | 'protect' | 'poison' | 'check' | 'shoot' | 'destruct') {
     return (target: Seat) => {
       const action = actionFor(view, kind, target);
       if (action !== null) send(action);
@@ -144,6 +149,18 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
               onConfirm={(target) => send({ type: 'WOLF_KILL', actor: seat, target })}
             />
           )}
+          {step.kind === 'night' &&
+            nightKind === 'guard' &&
+            you.role === 'guard' &&
+            you.guardOptions && (
+              <GuardPad
+                self={seat}
+                options={you.guardOptions}
+                targets={guardTargets(view)}
+                onProtect={onPick('protect')}
+                onPass={() => send({ type: 'GUARD_PASS', actor: seat })}
+              />
+            )}
           {step.kind === 'night' && nightKind === 'witch' && you.role === 'witch' && (
             <WitchPad
               self={seat}
@@ -255,9 +272,13 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : destruct.active ? null : (
               <Waiting note="猎人技能发动中…" />
             ))}
+
+          {destruct.active && (
+            <DestructControl targets={destruct.targets} onDestruct={onPick('destruct')} />
+          )}
 
           {step.kind === 'badge-pass' && (
             <div>

@@ -34,6 +34,7 @@ function view(opts: {
     phase: opts.step.kind === 'game-over' ? 'game-over' : 'speech',
     dayNumber: 1,
     winner: null,
+    board: 'classic',
     you: opts.you,
     players: opts.players ?? [row(1), row(2), row(3), row(4), row(5)],
     step: opts.step,

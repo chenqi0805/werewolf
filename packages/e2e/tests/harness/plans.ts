@@ -73,6 +73,84 @@ export function goodWinPlan(roles: Map<Seat, Role>): PlayPlan {
   };
 }
 
+/**
+ * C — 预女猎守 board, deterministic beats:
+ * night 1 the guard covers the wolf knife (平安夜); day 1 the 白狼王
+ * self-destructs taking the hunter, whose shot still lands on a wolf; night 2
+ * the same knife lands because 连守 forbids the repeat protect; day 2–3 the
+ * table's vote majority exiles the remaining wolves — a good win.
+ */
+export function wolfKingPlan(roles: Map<Seat, Role>): PlayPlan {
+  const ofRole = (seats: number[], role: Role): number[] =>
+    seats.filter((seat) => roles.get(seat) === role);
+  const villagers = [...roles.entries()]
+    .filter(([, role]) => role === 'villager')
+    .map(([seat]) => seat)
+    .sort((a, b) => a - b);
+  const knife = villagers[0] ?? -1; // nights 1–2 target the same villager
+
+  return {
+    wolfKill: (day, targets) => {
+      if (day <= 2 && targets.includes(knife)) return knife;
+      return ofRole(targets, 'villager')[0] ?? fail('no villager to kill');
+    },
+    guardProtect: (day, targets, banned) => {
+      // Night 1 covers the knife — the save. Later nights: cover a god and
+      // never a villager (first ascending, skipping the banned seat) so the
+      // script's fate table stays deterministic — the knife always lands on
+      // the next villager.
+      if (day === 1) {
+        return targets.includes(knife) ? knife : fail('guard cannot cover the knife');
+      }
+      return targets.find((t) => t !== banned && roles.get(t) !== 'villager') ?? null;
+    },
+    witch: () => ({ kind: 'pass' }),
+    seerCheck: (_day, targets) => targets[0] ?? fail('seer has no unchecked target'),
+    sheriffCandidates: [],
+    speech: () => '过',
+    exileVote: (seat, _day, candidates) => {
+      if (roles.get(seat) === 'werewolf' || roles.get(seat) === 'white_wolf_king') {
+        return (
+          ofRole(candidates, 'villager')[0] ??
+          ofRole(candidates, 'seer')[0] ??
+          ofRole(candidates, 'witch')[0] ??
+          ofRole(candidates, 'guard')[0] ??
+          ofRole(candidates, 'hunter')[0] ??
+          null
+        );
+      }
+      return ofRole(candidates, 'werewolf')[0] ?? null;
+    },
+    hunterShot: (_day, targets) => ofRole(targets, 'werewolf')[0] ?? null,
+    destruct: (day, targets) => {
+      // Day 1: blast taking the hunter — the taken hunter still shoots.
+      if (day === 1) return ofRole(targets, 'hunter')[0] ?? null;
+      return null;
+    },
+    badgePass: () => null,
+  };
+}
+
+/**
+ * D — bot-mix: the humans sit back while the scripted brains play the table.
+ * Human wolves still vote the first living target so the pack's knife lands;
+ * everything else stays passive and the game must finish on the bots alone.
+ */
+export function botMixPlan(): PlayPlan {
+  return {
+    wolfKill: (_day, targets) => targets[0] ?? null,
+    guardProtect: (_day, targets) => targets[0] ?? null,
+    witch: () => ({ kind: 'pass' }),
+    seerCheck: (_day, targets) => targets[0] ?? fail('seer has no unchecked target'),
+    sheriffCandidates: [],
+    speech: () => '过',
+    exileVote: () => null,
+    hunterShot: () => null,
+    destruct: () => null,
+    badgePass: () => null,
+  };
+}
+
 function fail(why: string): number {
   throw new Error(`plan dead-end: ${why}`);
 }

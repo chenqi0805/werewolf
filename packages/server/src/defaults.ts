@@ -1,4 +1,5 @@
 import type { GameAction, GameState, PlayerAction, Role } from '@werewolf/engine';
+import { campOf } from '@werewolf/engine';
 
 /**
  * The timer contract: when a phase clock lapses, the server injects these
@@ -18,6 +19,15 @@ export function defaultActionsFor(state: GameState): GameAction[] {
     case 'night': {
       const night = state.night;
       if (!night) return [];
+      // The guard's window blocks the wolves (the engine rejects a wolf kill
+      // while it pends), so his default comes first: a pass when 空守 is
+      // legal. With 空守 off there is no neutral default — the guard simply
+      // waits, the same semantics an emptyKnife-off pack gets.
+      if (night.guardTurn === 'pending') {
+        const guard = findByRole(state, 'guard');
+        if (!guard?.alive || !state.config.guardEmptyProtect) return [];
+        return [{ type: 'GUARD_PASS', actor: guard.seat }];
+      }
       if (night.step === 'wolf') {
         // 空刀 is the only fair default. The non-default knob (emptyKnife
         // off) has no neutral action — those wolves simply wait; v1 ships
@@ -65,7 +75,13 @@ export function defaultActionsFor(state: GameState): GameAction[] {
     }
     case 'hunter-shot': {
       const head = state.resolution?.queue[0];
-      return head ? [{ type: 'HUNTER_PASS', actor: head.seat }] : [];
+      if (!head) return [];
+      // The 白狼王's own settlement window rides the same interrupt phase;
+      // a hunter pass for him is illegal — pass the destruct instead.
+      if (head.destructWindow && !head.destructWindowDone) {
+        return [{ type: 'WOLF_KING_PASS', actor: head.seat }];
+      }
+      return [{ type: 'HUNTER_PASS', actor: head.seat }];
     }
     case 'badge-pass': {
       // 撕毁 — a vanished holder does not hand the badge to anyone.
@@ -107,8 +123,10 @@ export const DEFAULT_TIMERS: Record<string, number> = {
 };
 
 function livingWolves(state: GameState): number[] {
+  // Camp, never the role literal — the 白狼王 votes in the kill too, and an
+  // uninjected king's pack stalls the night forever on the wolf clock.
   return Object.values(state.players)
-    .filter((p) => p.alive && p.role === 'werewolf')
+    .filter((p) => p.alive && campOf(p.role) === 'wolf')
     .map((p) => p.seat)
     .sort((a, b) => a - b);
 }

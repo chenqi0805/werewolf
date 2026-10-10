@@ -3,10 +3,14 @@ import type { GameEvent } from '@werewolf/engine';
 import type { PlayerView } from '@werewolf/server';
 
 import {
+  actionFor,
   canSpeakNow,
   canVoteNow,
   directionNeeded,
   formatCountdown,
+  destructState,
+  guardOptionsOf,
+  guardTargets,
   hunterShotState,
   msLeftOf,
   nightPadKind,
@@ -46,6 +50,7 @@ const view = (overrides: Partial<PlayerView> = {}): PlayerView => ({
   phase: 'night',
   dayNumber: 1,
   winner: null,
+  board: 'classic',
   you: you(),
   players: [row(1), row(2), row(3), row(4), row(5)],
   step: { kind: 'night', step: 'wolf' },
@@ -65,6 +70,35 @@ describe('nightPadKind', () => {
     expect(
       nightPadKind(view({ you: you({ role: 'seer' }), step: { kind: 'night', step: 'seer' } })),
     ).toBe('seer');
+  });
+
+  it('routes the pending guard window to the guard alone', () => {
+    const pending: PlayerView['step'] = { kind: 'night', step: 'wolf', guardPending: true };
+    expect(nightPadKind(view({ you: you({ role: 'guard' }), step: pending }))).toBe('guard');
+    // While the guard pends, the wolves wait — their actions would be rejected.
+    expect(nightPadKind(view({ you: you({ role: 'werewolf' }), step: pending }))).toBe('waiting');
+    expect(
+      nightPadKind(view({ you: you({ role: 'guard' }), step: { kind: 'night', step: 'wolf' } })),
+    ).toBe('waiting');
+  });
+
+  it('gives the 白狼王 the wolf pad for the kill, but only that step', () => {
+    expect(
+      nightPadKind(
+        view({ you: you({ role: 'white_wolf_king' }), step: { kind: 'night', step: 'wolf' } }),
+      ),
+    ).toBe('wolf');
+    // His pack targets flow from the projected wolfPack, same as any wolf.
+    const kingView = view({
+      you: you({ role: 'white_wolf_king', wolfPack: [4, 12] }),
+      players: [row(1), row(2), row(3, { alive: false }), row(4), row(5)],
+    });
+    expect(nightTargets(kingView).map((t) => t.seat)).toEqual([1, 2, 5]);
+    expect(
+      nightPadKind(
+        view({ you: you({ role: 'white_wolf_king' }), step: { kind: 'night', step: 'witch' } }),
+      ),
+    ).toBe('waiting');
   });
 
   it('shows a waiting pad for bystanders and other steps', () => {
@@ -95,12 +129,99 @@ describe('target selectors', () => {
     expect(poisonTargets(wolfView).map((t) => t.seat)).toEqual([1, 2, 4, 5]);
   });
 
+  it('hands the guard his options and living others as protectees', () => {
+    const guardView = view({
+      step: { kind: 'night', step: 'wolf', guardPending: true },
+      you: you({
+        role: 'guard',
+        guardOptions: { maySelfProtect: true, mayPass: true, repeatBan: true, lastProtected: 2 },
+      }),
+      players: [row(1), row(2), row(3, { alive: false }), row(4), row(5)],
+    });
+    expect(guardOptionsOf(guardView)).toEqual({
+      maySelfProtect: true,
+      mayPass: true,
+      repeatBan: true,
+      lastProtected: 2,
+    });
+    expect(guardTargets(guardView).map((t) => t.seat)).toEqual([1, 2, 4, 5]); // self excluded
+    // A non-guard gets no options even during the pending window.
+    expect(
+      guardOptionsOf(
+        view({
+          you: you({ role: 'seer' }),
+          step: { kind: 'night', step: 'wolf', guardPending: true },
+        }),
+      ),
+    ).toBeNull();
+    expect(guardOptionsOf(view({ you: you({ role: 'guard', alive: false }) }))).toBeNull();
+  });
+
   it('offers living unchecked players to the seer', () => {
     const seerView = view({
       you: you({ role: 'seer', seerChecks: { 2: 'good' } }),
       players: [row(1), row(2), row(3), row(4, { alive: false })],
     });
     expect(seerTargets(seerView).map((t) => t.seat)).toEqual([1]); // self and checked seats excluded
+  });
+});
+
+describe('destructState', () => {
+  const kingView = (step: PlayerView['step'], overrides: Partial<PlayerView['you']> = {}) =>
+    view({
+      step,
+      you: you({ role: 'white_wolf_king', seat: 4, ...overrides }),
+      players: [row(1), row(2), row(3, { alive: false }), row(4), row(5)],
+    });
+
+  it('opens for a living king during the day speech rounds', () => {
+    expect(destructState(kingView({ kind: 'speech', order: [4, 5], cursor: 0 })).active).toBe(true);
+    expect(destructState(kingView({ kind: 'pk-speech', tied: [4, 5], cursor: 0 })).active).toBe(
+      true,
+    );
+    const state = destructState(kingView({ kind: 'speech', order: [5], cursor: 0 }));
+    expect(state.targets.map((t) => t.seat)).toEqual([1, 2, 5]); // living others only
+  });
+
+  it('opens at the dead king’s own exile settlement', () => {
+    const settlement: PlayerView['step'] = { kind: 'hunter-shot', seat: 4 };
+    expect(destructState(kingView(settlement, { alive: false })).active).toBe(true);
+    // Another seat's shot window is not his.
+    expect(destructState(kingView({ kind: 'hunter-shot', seat: 8 }, { alive: false })).active).toBe(
+      false,
+    );
+  });
+
+  it('stays shut outside his windows, once used, and for other roles', () => {
+    expect(destructState(kingView({ kind: 'night', step: 'wolf' })).active).toBe(false);
+    expect(
+      destructState(kingView({ kind: 'speech', order: [4], cursor: 0 }, { destructUsed: true }))
+        .active,
+    ).toBe(false);
+    expect(destructState(view({ you: you({ role: 'werewolf', seat: 4 }) })).active).toBe(false);
+    expect(destructState(view({ you: you({ role: 'hunter', seat: 4 }) })).active).toBe(false);
+  });
+
+  it('builds the destruct action', () => {
+    const king = kingView({ kind: 'speech', order: [4], cursor: 0 });
+    expect(actionFor(king, 'destruct', 7)).toEqual({
+      type: 'WOLF_KING_DESTRUCT',
+      actor: 4,
+      target: 7,
+    });
+  });
+});
+
+describe('actionFor', () => {
+  it('builds the guard protect action and rejects empty targets', () => {
+    const guardView = view({ you: you({ role: 'guard', seat: 12 }) });
+    expect(actionFor(guardView, 'protect', 7)).toEqual({
+      type: 'GUARD_PROTECT',
+      actor: 12,
+      target: 7,
+    });
+    expect(actionFor(guardView, 'protect', null)).toBeNull();
+    expect(actionFor(view({ you: you({ seat: null, role: 'guard' }) }), 'protect', 7)).toBeNull();
   });
 });
 

@@ -60,6 +60,7 @@ function wolfKillView(seat: Seat): PlayerView {
     phase: 'night',
     dayNumber: 1,
     winner: null,
+    board: 'classic',
     you: {
       seat,
       role: 'werewolf',

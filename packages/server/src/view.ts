@@ -1,5 +1,5 @@
-import type { Camp, GameEvent, GameState, Phase, Role, Seat } from '@werewolf/engine';
-import { canVote, SEAT_COUNT, visibilityOf, voteWeight } from '@werewolf/engine';
+import type { BoardId, Camp, GameEvent, GameState, Phase, Role, Seat } from '@werewolf/engine';
+import { campOf, canVote, SEAT_COUNT, visibilityOf, voteWeight } from '@werewolf/engine';
 
 /**
  * The fog-of-war projection — the security core of the product.
@@ -37,6 +37,18 @@ export interface WitchPotionView {
   killTarget?: Seat | null;
 }
 
+/** The guard's options while his night turn is open — his private window. */
+export interface GuardOptionsView {
+  /** 自守 — protecting himself is a legal choice on this board. */
+  maySelfProtect: boolean;
+  /** 空守 — declining to protect anyone is legal on this board. */
+  mayPass: boolean;
+  /** 连守 — protecting last night's target again is banned on this board. */
+  repeatBan: boolean;
+  /** Last night's protected seat, or null on night 1 (the 连守 check). */
+  lastProtected: Seat | null;
+}
+
 export interface YouView {
   /** null = spectator (joined a finished room). */
   seat: Seat | null;
@@ -46,7 +58,7 @@ export interface YouView {
   revealedIdiot: boolean;
   /** 0 (no rights), 1, or 1.5 with the badge — for the vote pad. */
   voteWeight: number;
-  /** Wolf only, while alive: every wolf seat including self. */
+  /** Wolf-camp viewer (狼人 or 白狼王), while alive: every wolf-camp seat including self. */
   wolfPack?: Seat[];
   /** Seer only, while alive: accumulated check results, permanently. */
   seerChecks?: Partial<Record<Seat, Camp>>;
@@ -54,12 +66,21 @@ export interface YouView {
   witchPotions?: WitchPotionView;
   /** Hunter only, while alive. */
   hunterShotUsed?: boolean;
+  /** 白狼王 viewer, living or dead (his settlement window fires after exile). */
+  destructUsed?: boolean;
+  /** Guard only, while his night turn waits on him. */
+  guardOptions?: GuardOptionsView;
 }
 
 /** Public per-phase progress. Nothing here is secret at the table. */
 export type StepView =
   | { kind: 'lobby' }
-  | { kind: 'night'; step: 'wolf' | 'witch' | 'seer' }
+  | {
+      kind: 'night';
+      step: 'wolf' | 'witch' | 'seer';
+      /** True while the night waits on the guard (guard-first boards) before the wolves. */
+      guardPending?: true;
+    }
   | { kind: 'sheriff-signup'; candidates: Seat[] }
   | { kind: 'sheriff-speech'; queue: Seat[]; cursor: number }
   | { kind: 'sheriff-vote'; electorate: Seat[] }
@@ -87,6 +108,8 @@ export interface PlayerView {
   phase: Phase;
   dayNumber: number;
   winner: 'wolves' | 'good' | null;
+  /** The dealt board — display lines (lineup captions, log openers) derive from the registry. */
+  board: BoardId;
   you: YouView;
   players: PlayerRow[];
   step: StepView;
@@ -105,6 +128,11 @@ function publiclyRevealed(state: GameState): Map<Seat, Role> {
   for (const event of state.log) {
     if (event.type === 'IDIOT_REVEALED') revealed.set(event.seat, 'idiot');
     if (event.type === 'HUNTER_SHOT') revealed.set(event.shooter, 'hunter');
+    // 自爆亮牌 — the destruct is a public event naming the king; his card
+    // flips for everyone the moment he fires.
+    if (event.type === 'WHITE_WOLF_KING_DESTRUCTED') {
+      revealed.set(event.actor, 'white_wolf_king');
+    }
   }
   return revealed;
 }
@@ -124,7 +152,11 @@ function stepView(state: GameState): StepView {
     case 'lobby':
       return { kind: 'lobby' };
     case 'night':
-      return { kind: 'night', step: state.night?.step ?? 'wolf' };
+      return {
+        kind: 'night',
+        step: state.night?.step ?? 'wolf',
+        ...(state.night?.guardTurn === 'pending' ? { guardPending: true } : {}),
+      };
     case 'sheriff-signup':
       return {
         kind: 'sheriff-signup',
@@ -195,9 +227,12 @@ export function viewFor(
   const over = state.phase === 'game-over';
   const viewer = seat === null ? null : (state.players[seat] ?? null);
   const revealed = publiclyRevealed(state);
+  // The 白狼王 is wolf camp: he shares the pack view, and packmates see his
+  // true role. Camp, never a role literal — a literal sweep misses the king
+  // exactly where it hurts (seer results, pack view, kill electorate).
   const wolves = new Set(
     Object.values(state.players)
-      .filter((p) => p.role === 'werewolf')
+      .filter((p) => campOf(p.role) === 'wolf')
       .map((p) => p.seat),
   );
   // Extras (wolf pack, seer checks, potion state) belong to living, seated
@@ -205,7 +240,7 @@ export function viewFor(
   // everything anyway. The lobby reveals nothing — cards are dealt at start.
   const started = state.phase !== 'lobby';
   const extras = started && viewer !== null && viewer.alive;
-  const seesWolfPack = extras && viewer.role === 'werewolf';
+  const seesWolfPack = extras && viewer !== null && campOf(viewer.role) === 'wolf';
 
   const players: PlayerRow[] = [];
   for (let s = 1; s <= SEAT_COUNT; s++) {
@@ -214,7 +249,9 @@ export function viewFor(
     let role: Role | null = started ? (revealed.get(p.seat) ?? null) : null;
     if (started && over) role = p.role;
     else if (started && viewer !== null && viewer.seat === p.seat) role = p.role;
-    else if (started && seesWolfPack && wolves.has(p.seat)) role = 'werewolf';
+    // The pack sees exact roles, not a masked 狼人: a 白狼王 packmate is
+    // public knowledge inside the camp, and the client renders his badge.
+    else if (started && seesWolfPack && wolves.has(p.seat)) role = p.role;
     players.push({
       seat: p.seat,
       alive: p.alive,
@@ -267,12 +304,36 @@ export function viewFor(
     if (extras && viewer.private.kind === 'hunter') {
       you.hunterShotUsed = viewer.private.shotUsed;
     }
+    // The 白狼王's destruct state rides with the viewer even dead: his
+    // settlement window opens after the exile that killed him — exactly when
+    // the living-only `extras` no longer holds. His own private state, no leak.
+    if (started && viewer.private.kind === 'white_wolf_king') {
+      you.destructUsed = viewer.private.destructUsed;
+    }
+    // The guard's decision window: the night is waiting on him alone, so the
+    // pad's knobs ride with the view only while that window is open — the
+    // witch's killTarget pattern.
+    if (
+      started &&
+      state.phase === 'night' &&
+      state.night?.guardTurn === 'pending' &&
+      viewer.role === 'guard' &&
+      viewer.alive
+    ) {
+      you.guardOptions = {
+        maySelfProtect: state.config.guardSelfProtect,
+        mayPass: state.config.guardEmptyProtect,
+        repeatBan: state.config.guardRepeatBan,
+        lastProtected: state.lastProtected ?? null,
+      };
+    }
   }
 
   return {
     phase: state.phase,
     dayNumber: state.dayNumber,
     winner: state.winner,
+    board: state.board,
     you,
     players,
     step: stepView(state),

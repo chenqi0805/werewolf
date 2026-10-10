@@ -9,9 +9,12 @@
 /** Seat number, 1..12. Seat order drives speech and vote order. */
 export type Seat = number;
 
-// Kept in sync with the engine's board registry (v2 adds 白狼王 + guard).
-export type Role =
-  'werewolf' | 'white_wolf_king' | 'villager' | 'seer' | 'witch' | 'hunter' | 'guard' | 'idiot';
+import type { Role } from '@werewolf/engine';
+
+// The role enumeration is the engine registry's — one list, not four.
+// (Web's own `Camp` below is the winner-banner vocabulary — 'wolves' — which
+// the engine deliberately spells 'wolf' on the per-role campOf surface.)
+export type { Role };
 
 export type Camp = 'wolves' | 'good';
 

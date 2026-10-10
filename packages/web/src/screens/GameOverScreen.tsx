@@ -30,7 +30,7 @@ export function GameOverScreen({
           onAnalyze={() => requestPostgameAnalysis(socket)}
           disabled={!socket}
         />
-        <DayLog entries={logToEntries(view.log)} />
+        <DayLog entries={logToEntries(view.log, view.board)} />
       </section>
     </main>
   );
