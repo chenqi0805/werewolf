@@ -58,6 +58,12 @@ export function LobbyScreen({ view, roomCode, socket, onQuit }: LobbyScreenProps
 
   async function handleQuit(): Promise<void> {
     setActionError(null);
+    // Seat-less viewers hold no seat to free — `room:leave` is seat-scoped
+    // and would ack NOT_IN_ROOM. Their quit is client-side only.
+    if (view.you.seat === null) {
+      onQuit();
+      return;
+    }
     try {
       await leaveRoom(socket);
       onQuit();
