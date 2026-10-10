@@ -16,7 +16,7 @@ export type { EngineConfig, WolfKingDestructWindow } from './config';
 export { DEFAULT_CONFIG } from './config';
 
 export type { GameAction, PlayerAction, ServerAction } from './actions';
-export type { GameEvent, EventVisibility, TallyRow } from './events';
+export type { GameEvent, EventVisibility, TallyBallot, TallyRow } from './events';
 export { visibilityOf } from './events';
 
 export type {
@@ -40,5 +40,5 @@ export { createGame } from './create';
 export { applyAction, type AppliedAction } from './engine';
 
 // Rule helpers the server and future bot framework may reuse.
-export { voteWeight, tallyVotes, tallyRows, type Plurality } from './votes';
+export { voteWeight, tallyBallots, tallyVotes, tallyRows, type Plurality } from './votes';
 export { winCheck } from './resolution';
