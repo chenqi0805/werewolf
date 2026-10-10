@@ -48,6 +48,10 @@ export type PlayerAction =
   | { type: 'WOLF_KING_DESTRUCT'; actor: Seat; target: Seat }
   /** Declines his destruct window (exile settlement only). */
   | { type: 'WOLF_KING_PASS'; actor: Seat }
+  /** 狼人自爆 — a plain wolf (badge held or not) reveals and dies, taking
+   *  nobody with him. The 白狼王 keeps his targeted destruct and cannot
+   *  use this. */
+  | { type: 'WOLF_EXPLODE'; actor: Seat }
   /** Sheriff sets the daily speech direction. */
   | { type: 'SET_SPEECH_DIRECTION'; actor: Seat; direction: 'cw' | 'ccw' };
 

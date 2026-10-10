@@ -121,8 +121,16 @@ export function drainResolution(state: GameState, events: GameEvent[]): void {
 function finishResolutionStep(state: GameState, res: ResolutionState, events: GameEvent[]): void {
   state.resolution = null;
   if (res.newDeaths && checkGameOver(state, events)) return;
-  if (res.origin === 'dawn') afterDawn(state);
-  else enterNight(state, events);
+  if (res.origin === 'dawn') {
+    afterDawn(state, events);
+  } else if (res.origin === 'explode' && state.pendingDawn !== null) {
+    // Day-1 自爆 mid-election: the buffered night deaths release through the
+    // dawn announcements — then night falls, the speech program skipped.
+    // (pendingDawn is non-null only while a day-1 election runs.)
+    enterDawn(state, events, true);
+  } else {
+    enterNight(state, events);
+  }
 }
 
 /** Night deaths: the win check fires here, before any election or dawn. */
@@ -176,13 +184,19 @@ function computeNightDeaths(
 
 /**
  * Enters dawn: consumes pending night deaths, or announces a 平安夜.
+ * `explodeRelease` marks a dawn released by a wolf explode — afterDawn then
+ * falls to night instead of running the day's program.
  */
-export function enterDawn(state: GameState, events: GameEvent[]): void {
+export function enterDawn(state: GameState, events: GameEvent[], explodeRelease = false): void {
   const records = state.pendingDawn ?? [];
   state.pendingDawn = null;
   state.election = null;
   events.push({ type: 'DAY_BROKE', dayNumber: state.dayNumber });
-  state.dawn = { pending: records.length > 0 ? records : ['peace'], announced: [] };
+  state.dawn = {
+    pending: records.length > 0 ? records : ['peace'],
+    announced: [],
+    explodeRelease,
+  };
   state.phase = 'dawn-announce';
 }
 
@@ -190,9 +204,15 @@ export function enterDawn(state: GameState, events: GameEvent[]): void {
  * After the dawn announcements (and any interrupts they opened): night-1
  * deaths give last words on day 1; from day 2 the speech round starts.
  */
-export function afterDawn(state: GameState): void {
+export function afterDawn(state: GameState, events: GameEvent[]): void {
   const dawn = state.dawn;
   state.dawn = null;
+  // 自爆释放: the day's program (last words, speeches) is skipped — the
+  // announcements done, night falls.
+  if (dawn?.explodeRelease) {
+    enterNight(state, events);
+    return;
+  }
   const lwSeats = dawn
     ? dawn.announced
         .filter((r) => r.lastWordsEligible)
