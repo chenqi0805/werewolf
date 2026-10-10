@@ -82,16 +82,19 @@ export function parseDecision(raw: string): BotDecision | null {
 export function isLegalFor(view: PlayerView, action: PlayerAction): boolean {
   if (view.you.seat === null || action.actor !== view.you.seat) return false;
   const kind = view.step.kind;
-  // Widened to string: the server's night-step union predates the guard step
-  // (the 预女猎守 wiring is server-side, still pending) — the moment that type
-  // grows 'guard', this check accepts it with no change here.
+  // Widened to string: the night-step union is still 'wolf' | 'witch' |
+  // 'seer'; the guard's own window rides the server's guardPending flag (the
+  // client's GuardPad keys off the same flag). If the type ever grows
+  // 'guard', this check accepts it with no change here.
   const night: string | null = view.step.kind === 'night' ? view.step.step : null;
   switch (action.type) {
     case 'WOLF_KILL':
       return night === 'wolf';
     case 'GUARD_PROTECT':
     case 'GUARD_PASS':
-      return night === 'guard';
+      // The guard plays while the night waits on him — the step union has no
+      // 'guard' member yet, so the window is the guardPending flag.
+      return night === 'guard' || (view.step.kind === 'night' && view.step.guardPending === true);
     case 'WITCH_HEAL':
     case 'WITCH_POISON':
     case 'WITCH_PASS':
