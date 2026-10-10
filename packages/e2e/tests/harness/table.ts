@@ -2,6 +2,7 @@ import { expect, type Browser, type BrowserContext, type Page } from '@playwrigh
 import type { Role, Seat } from '@werewolf/engine';
 
 import { ROLE_LABELS, SELECTORS, dayOfTitle } from './labels';
+import { closeSpeechSockets } from './speechSocket';
 /** One seated player: the page holding the seat and the role it was dealt. */
 export interface SeatPage {
   seat: Seat;
@@ -112,6 +113,7 @@ export async function openTable(browser: Browser, opts: OpenTableOptions = {}): 
       },
       wolves: () => seats.filter((s) => s.role === 'werewolf').sort((a, b) => a.seat - b.seat),
       close: async () => {
+        closeSpeechSockets();
         await Promise.all(contexts.map((context) => context.close()));
       },
     };

@@ -32,3 +32,5 @@ export { PostgameReview } from './PostgameReview/PostgameReview';
 export type { PostgameReviewProps } from './PostgameReview/PostgameReview';
 export { SpectatorView } from './SpectatorView/SpectatorView';
 export type { SpectatorViewProps } from './SpectatorView/SpectatorView';
+export { VoiceControls } from './VoiceControls/VoiceControls';
+export type { VoiceControlsProps } from './VoiceControls/VoiceControls';

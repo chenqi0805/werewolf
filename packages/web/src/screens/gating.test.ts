@@ -19,6 +19,7 @@ import {
   seerTargets,
   sheriffSignupState,
   speechContextOf,
+  speechSlotKeyOf,
   strategyContextOf,
   voteContextOf,
 } from './gating';
@@ -390,5 +391,41 @@ describe('countdown formatters', () => {
     expect(msLeftOf({ key: 'night:wolf', endsAt: 10_000 }, 7_000)).toBe(3_000);
     expect(msLeftOf({ key: 'night:wolf', endsAt: 10_000 }, 12_000)).toBe(0);
     expect(msLeftOf(null, 1_000)).toBeNull();
+  });
+});
+
+describe('speechSlotKeyOf', () => {
+  it('names the speech context, clock key, and deadline', () => {
+    const timer = { key: 'speech', endsAt: 900_000 };
+    const v = view({ step: { kind: 'speech', order: [3], cursor: 0 }, timer });
+    expect(speechSlotKeyOf(v)).toBe('speech:speech:900000');
+    expect(
+      speechSlotKeyOf(view({ step: { kind: 'last-words', queue: [3], cursor: 0 }, timer })),
+    ).toBe('last-words:speech:900000');
+  });
+
+  it('is null outside speech slots', () => {
+    expect(speechSlotKeyOf(view())).toBeNull();
+    expect(
+      speechSlotKeyOf(view({ step: { kind: 'exile-vote', electorate: [1, 2, 3] } })),
+    ).toBeNull();
+  });
+
+  it('changes when the slot moves on — new deadline or new clock', () => {
+    const base = view({ step: { kind: 'speech', order: [3], cursor: 0 } });
+    const a = speechSlotKeyOf(view({ ...base, timer: { key: 'speech', endsAt: 900_000 } }));
+    // Same clock advanced: a fresh slot for the next speaker.
+    const b = speechSlotKeyOf(view({ ...base, timer: { key: 'speech', endsAt: 975_000 } }));
+    // A different clock key (phase moved) is a different slot even at the same ms.
+    const c = speechSlotKeyOf(view({ ...base, timer: { key: 'pk-speech', endsAt: 900_000 } }));
+    expect(a).not.toBe(b);
+    expect(a).not.toBe(c);
+    expect(b).not.toBe(c);
+  });
+
+  it('falls back to the log length when the slot runs without a clock', () => {
+    const v = view({ step: { kind: 'speech', order: [3], cursor: 0 }, timer: null });
+    expect(speechSlotKeyOf(v)).toBe('speech:log:0');
+    expect(speechSlotKeyOf({ ...v, log: [{} as PlayerView['log'][number]] })).toBe('speech:log:1');
   });
 });

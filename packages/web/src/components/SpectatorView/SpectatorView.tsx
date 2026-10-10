@@ -39,7 +39,6 @@ export function SpectatorView({
         speakingSeat={speakingSeat}
         mySeat={null}
         canSpeak={false}
-        onSend={() => undefined}
         disabled={true}
         hint="观战视角，无法发言"
       />

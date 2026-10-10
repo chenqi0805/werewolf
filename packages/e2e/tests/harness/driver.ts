@@ -2,6 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import type { Seat } from '@werewolf/engine';
 
 import { SELECTORS, WINNER_LABELS, dayOfTitle, seatOfChipLabel } from './labels';
+import { speakViaSocket } from './speechSocket';
 import type { SeatPage, Table } from './table';
 
 /** The witch's turn: heal tonight's victim, poison someone, or pass. */
@@ -226,7 +227,7 @@ async function driveDirection(seat: SeatPage, acted: Set<string>, day: number): 
   return true;
 }
 
-/** Speech panel: post the plan's line when the slot is mine. */
+/** Speech panel: the plan's line leaves through the seat's own socket. */
 async function driveSpeech(
   seat: SeatPage,
   plan: PlayPlan,
@@ -237,11 +238,11 @@ async function driveSpeech(
   if (!(await panel.isVisible())) return false;
   const fingerprint = `speak|${seat.seat}|${day}`;
   if (acted.has(fingerprint)) return true;
-  const input = panel.locator(SELECTORS.speechInput);
-  const send = panel.locator(SELECTORS.speechSend);
-  if (!(await input.isEnabled()) || !(await send.isEnabled())) return true; // not my slot
-  await input.fill(plan.speech(seat.seat, day));
-  if (await softClick(send)) acted.add(fingerprint);
+  // Voice-only composer: nothing to type. The line rides the seat's socket
+  // when the seat's own filtered view says the slot is theirs.
+  if (await speakViaSocket(seat.seat, seat.page, plan.speech(seat.seat, day))) {
+    acted.add(fingerprint);
+  }
   return true;
 }
 

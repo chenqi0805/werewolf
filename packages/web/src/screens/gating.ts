@@ -277,3 +277,19 @@ export function actionFor(
       return { type: 'HUNTER_SHOOT', actor: seat, target };
   }
 }
+
+/**
+ * Identity of the current speech slot, from this viewer's vantage: the
+ * speech context plus the phase clock. The server re-arms its single clock
+ * after every accepted change, so a new slot always moves `timer.endsAt`,
+ * and nothing re-arms it mid-slot. Null when no speech context is open; a
+ * log-length fallback keys the rare unclocked slot.
+ */
+export function speechSlotKeyOf(view: PlayerView): string | null {
+  const context = speechContextOf(view);
+  if (context === null) return null;
+  const timer = view.timer;
+  return timer !== null
+    ? `${context}:${timer.key}:${timer.endsAt}`
+    : `${context}:log:${view.log.length}`;
+}
