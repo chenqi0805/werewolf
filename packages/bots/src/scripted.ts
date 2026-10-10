@@ -8,10 +8,12 @@ import type { BotContext, BotDecision, BotStrategy } from './strategy';
  * It powers every CI and e2e bot and is what a live game degrades to when a
  * model backend is unavailable, so it plays a complete game: wolves always
  * answer the kill vote (one stalled wolf would force 空刀 every night), the
- * witch saves the first knife and hoards poison, the seer checks and claims,
- * the guard alternates targets under 连守, the 白狼王 destructs when the
- * pack is down to him, and votes concentrate on the lowest living seat so a
- * table of bots converges to an end instead of abstaining forever.
+ * witch saves the first knife and hoards poison, the seer checks, claims, and
+ * always runs for sheriff (the only scripted candidate — her 警上发言 is a
+ * fixed line), the guard alternates targets under 连守, the 白狼王 destructs
+ * when the pack is down to him, and votes concentrate on the lowest living
+ * seat so a table of bots converges to an end instead of abstaining forever.
+ * Scripted wolves never 自爆 — exploding stays an LLM-only option.
  *
  * Target selection is a pure function of the view (+ the guard's own last
  * protection): repeated broadcasts re-offer the same opportunity and the
@@ -35,12 +37,19 @@ export class ScriptedStrategy implements BotStrategy {
       case 'hunter-shot':
         return this.interruptDecision(view, actor);
       case 'exile-vote':
-      case 'pk-vote':
         return this.ballot(view, actor);
+      case 'pk-vote':
+        // A sheriff PK revote is the 警下 ballot for the badge — the same
+        // candidate-reading rule as the first ballot, never a fellow elector.
+        return view.step.voteKind === 'sheriff'
+          ? this.sheriffBallot(view, actor)
+          : this.ballot(view, actor);
       case 'sheriff-vote':
         return this.sheriffBallot(view, actor);
       case 'sheriff-signup':
-        return null; // bots stay off the platform; the election may void
+        return this.sheriffSignupDecision(view, actor);
+      case 'sheriff-speech':
+        return this.sheriffSpeechDecision(ctx, actor);
       case 'badge-pass':
         return this.badgePassDecision(view, actor);
       case 'speech':
@@ -167,28 +176,50 @@ export class ScriptedStrategy implements BotStrategy {
     return { action: { type: 'SHERIFF_PASS', actor, target } };
   }
 
-  /** Voters with rights vote the lowest living seat; abstain when alone. */
+  /** Exile voters with rights vote the lowest living seat; abstain when alone. */
   private ballot(view: PlayerViewOf, actor: Seat): BotDecision | null {
     const step = view.step;
     if (step.kind !== 'exile-vote' && step.kind !== 'pk-vote') return null;
-    const isSheriff = step.kind === 'pk-vote' && step.voteKind === 'sheriff';
     const you = view.you;
     if (!you.alive || !step.electorate.includes(actor)) return null;
     const target = lowestOf(step.electorate.filter((s) => s !== actor));
-    return isSheriff
-      ? { action: { type: 'SHERIFF_VOTE', actor, target } }
-      : { action: { type: 'EXILE_VOTE', actor, target } };
+    return { action: { type: 'EXILE_VOTE', actor, target } };
+  }
+
+  /**
+   * 竞选 is deterministic: the seer always runs (the day-1 podium is her
+   * claim), every other role stays off the platform. Once standing she goes
+   * quiet — a repeat signup is a guaranteed ALREADY_DONE rejection, and the
+   * runner's fingerprint dedupe only suppresses identical decisions.
+   */
+  private sheriffSignupDecision(view: PlayerViewOf, actor: Seat): BotDecision | null {
+    const step = view.step;
+    if (step.kind !== 'sheriff-signup') return null;
+    const you = view.you;
+    if (!you.alive || you.role !== 'seer') return null;
+    if (step.candidates.includes(actor)) return null;
+    return { action: { type: 'SHERIFF_SIGNUP', actor } };
+  }
+
+  /** The candidate's fixed 警上发言 — one deterministic campaign line. */
+  private sheriffSpeechDecision(ctx: BotContext, actor: Seat): BotDecision | null {
+    const { view } = ctx;
+    if (!view.you.alive || !holdsQueueSlot(view.step, actor)) return null;
+    return { action: { type: 'SPEAK', actor, text: SHERIFF_SPEECH_LINE } };
   }
 
   /**
    * 警下 voters back the lowest living candidate. Candidates are read from
    * the public signup log minus withdrawals — the StepView does not carry
-   * the platform list, but the fog-of-war log does.
+   * the platform list, but the fog-of-war log does. A sheriff PK revote is
+   * the same 警下 ballot; a fellow elector is never a legal target.
    */
   private sheriffBallot(view: PlayerViewOf, actor: Seat): BotDecision | null {
+    const step = view.step;
     const you = view.you;
-    if (view.step.kind !== 'sheriff-vote' || !view.step.electorate.includes(actor)) return null;
-    if (!you.alive) return null;
+    if (step.kind !== 'sheriff-vote' && step.kind !== 'pk-vote') return null;
+    if (step.kind === 'pk-vote' && step.voteKind !== 'sheriff') return null;
+    if (!you.alive || !step.electorate.includes(actor)) return null;
     const withdrawn = new Set(
       view.log.filter((e) => e.type === 'SHERIFF_WITHDREW').map((e) => e.seat),
     );
@@ -236,10 +267,14 @@ function holdsOrderSlot(step: PlayerViewOf['step'], seat: Seat): boolean {
   return step.order !== null && step.order[step.cursor] === seat;
 }
 
+/** Queue-shaped slots (last-words, sheriff-speech) belong to queue[cursor]. */
 function holdsQueueSlot(step: PlayerViewOf['step'], seat: Seat): boolean {
-  if (step.kind !== 'last-words') return false;
+  if (step.kind !== 'last-words' && step.kind !== 'sheriff-speech') return false;
   return step.queue[step.cursor] === seat;
 }
+
+/** The fixed 警上发言 every scripted candidate gives — deterministic for e2e. */
+const SHERIFF_SPEECH_LINE = '我是预言家，上警给大家报查验，请警下把票投给我。';
 
 function lastWordsFor(ctx: BotContext): string {
   return ctx.rng() < 0.5 ? '祝大家好运。' : '就到这里吧。';

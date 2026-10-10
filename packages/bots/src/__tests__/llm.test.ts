@@ -132,6 +132,48 @@ describe('isLegalFor', () => {
     });
     expect(isLegalFor(ownShot, { type: 'HUNTER_SHOOT', actor: 3, target: 2 })).toBe(true);
   });
+
+  it('accepts SPEAK in the sheriff-speech step — 警上发言 no longer degrades', () => {
+    const v = view({
+      you: you(3, 'seer'),
+      step: { kind: 'sheriff-speech', queue: [3], cursor: 0 },
+    });
+    expect(isLegalFor(v, { type: 'SPEAK', actor: 3, text: '我是预言家' })).toBe(true);
+    expect(isLegalFor(v, { type: 'SPEAK', actor: 4, text: '我是预言家' })).toBe(false);
+  });
+
+  it('gates WOLF_EXPLODE to living plain wolves in open windows', () => {
+    const windows: StepView[] = [
+      { kind: 'sheriff-signup', candidates: [] },
+      { kind: 'sheriff-speech', queue: [3], cursor: 0 },
+      { kind: 'speech', order: [3], cursor: 0 },
+      { kind: 'pk-speech', tied: [3], cursor: 0 },
+    ];
+    for (const step of windows) {
+      const v = view({ you: you(3, 'werewolf', { wolfPack: [3, 5] }), step });
+      expect(isLegalFor(v, { type: 'WOLF_EXPLODE', actor: 3 }), `step ${step.kind}`).toBe(true);
+    }
+    const ballot = view({
+      you: you(3, 'werewolf'),
+      step: { kind: 'exile-vote', electorate: [1, 2, 3] },
+    });
+    expect(isLegalFor(ballot, { type: 'WOLF_EXPLODE', actor: 3 })).toBe(false);
+    const king = view({
+      you: you(3, 'white_wolf_king'),
+      step: { kind: 'speech', order: [3], cursor: 0 },
+    });
+    expect(isLegalFor(king, { type: 'WOLF_EXPLODE', actor: 3 })).toBe(false);
+    const villager = view({
+      you: you(3, 'villager'),
+      step: { kind: 'speech', order: [3], cursor: 0 },
+    });
+    expect(isLegalFor(villager, { type: 'WOLF_EXPLODE', actor: 3 })).toBe(false);
+    const dead = view({
+      you: you(3, 'werewolf', { alive: false }),
+      step: { kind: 'speech', order: [3], cursor: 0 },
+    });
+    expect(isLegalFor(dead, { type: 'WOLF_EXPLODE', actor: 3 })).toBe(false);
+  });
 });
 
 // — buildPrompt —
@@ -195,6 +237,21 @@ describe('LlmStrategy', () => {
     const strategy = new LlmStrategy(fb.strategy, { chat });
     expect(await strategy.decide(ctxOf(wolfView))).toBeNull();
     expect(fb.calls()).toBe(1);
+  });
+
+  it('a wolf explode answer rides the wire without the fallback', async () => {
+    const chat = vi.fn().mockResolvedValue('{"action":{"type":"WOLF_EXPLODE","actor":3}}');
+    const fb = fallbackOf(null);
+    const strategy = new LlmStrategy(fb.strategy, { chat });
+    const explodeView = view({
+      you: you(3, 'werewolf', { wolfPack: [3, 5] }),
+      step: { kind: 'speech', order: [3], cursor: 0 },
+    });
+    expect((await strategy.decide(ctxOf(explodeView)))?.action).toEqual({
+      type: 'WOLF_EXPLODE',
+      actor: 3,
+    });
+    expect(fb.calls()).toBe(0);
   });
 
   it('degrades an endpoint failure to the fallback', async () => {
