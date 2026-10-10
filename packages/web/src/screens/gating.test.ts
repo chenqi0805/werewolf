@@ -82,6 +82,25 @@ describe('nightPadKind', () => {
     ).toBe('waiting');
   });
 
+  it('gives the 白狼王 the wolf pad for the kill, but only that step', () => {
+    expect(
+      nightPadKind(
+        view({ you: you({ role: 'white_wolf_king' }), step: { kind: 'night', step: 'wolf' } }),
+      ),
+    ).toBe('wolf');
+    // His pack targets flow from the projected wolfPack, same as any wolf.
+    const kingView = view({
+      you: you({ role: 'white_wolf_king', wolfPack: [4, 12] }),
+      players: [row(1), row(2), row(3, { alive: false }), row(4), row(5)],
+    });
+    expect(nightTargets(kingView).map((t) => t.seat)).toEqual([1, 2, 5]);
+    expect(
+      nightPadKind(
+        view({ you: you({ role: 'white_wolf_king' }), step: { kind: 'night', step: 'witch' } }),
+      ),
+    ).toBe('waiting');
+  });
+
   it('shows a waiting pad for bystanders and other steps', () => {
     expect(nightPadKind(view({ you: you({ role: 'villager' }) }))).toBe('waiting');
     expect(

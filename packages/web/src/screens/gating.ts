@@ -1,3 +1,4 @@
+import { campOf } from '@werewolf/engine';
 import type { PlayerAction } from '@werewolf/engine';
 import type { PlayerView, StepView, TimerInfo } from '@werewolf/server';
 
@@ -61,7 +62,9 @@ export function nightPadKind(view: PlayerView): NightPadKind {
   // The wolfking board's guard wakes before the pack: while his window is
   // pending the wire step still reads 'wolf', and only the guard may act.
   if (step.guardPending === true) return role === 'guard' ? 'guard' : 'waiting';
-  if (step.step === 'wolf' && role === 'werewolf') return 'wolf';
+  // Camp, not the literal — the 白狼王 votes in the nightly kill like any
+  // wolf, and without a pad his timer default would force 空刀 every night.
+  if (step.step === 'wolf' && role !== null && campOf(role) === 'wolf') return 'wolf';
   if (step.step === 'witch' && role === 'witch') return 'witch';
   if (step.step === 'seer' && role === 'seer') return 'seer';
   return 'waiting';
