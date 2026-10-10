@@ -27,9 +27,18 @@ export function createGameSocket(): GameSocket {
   return io({ transports: ['websocket', 'polling'], reconnectionDelayMax: 10000 });
 }
 
+/** Budget for one acked round-trip before the caller gets TIMEOUT. */
+export const ACK_TIMEOUT_MS = 20_000;
+
 type AckOf<T> = T | { error: string };
 
+/**
+ * A failure settle: the server's `{ error }` payload, or the bare Error a
+ * socket.timeout() ack receives when the round-trip budget expires or the
+ * transport drops before the server answers.
+ */
 function isAckFailure(resp: unknown): resp is { error: string } {
+  if (resp instanceof Error) return true;
   return (
     typeof resp === 'object' &&
     resp !== null &&
@@ -38,9 +47,15 @@ function isAckFailure(resp: unknown): resp is { error: string } {
   );
 }
 
-function callAck<T>(emit: (ack: (resp: AckOf<T>) => void) => void): Promise<T> {
+function callAck<T>(emit: (ack: (err: Error | null, resp: AckOf<T>) => void) => void): Promise<T> {
   return new Promise((resolve, reject) => {
-    emit((resp) => {
+    emit((err, resp) => {
+      if (isAckFailure(err)) {
+        // socket.timeout() settles with a bare Error on timeout or
+        // disconnect — one code; the caller only needs "it did not happen".
+        reject(new AckError('TIMEOUT'));
+        return;
+      }
       if (isAckFailure(resp)) {
         reject(new AckError(resp.error));
       } else {
@@ -56,44 +71,52 @@ export function createRoom(
   /** Display name chosen at the door; the server trims and caps it. */
   name = '',
 ): Promise<CreateAck> {
-  return callAck<CreateAck>((ack) => socket.emit('room:create', { board, name }, ack));
+  return callAck<CreateAck>((ack) =>
+    socket.timeout(ACK_TIMEOUT_MS).emit('room:create', { board, name }, ack),
+  );
 }
 
 export function joinRoom(socket: GameSocket, code: string, name = ''): Promise<JoinAck> {
-  return callAck<JoinAck>((ack) => socket.emit('room:join', code, name, ack));
+  return callAck<JoinAck>((ack) =>
+    socket.timeout(ACK_TIMEOUT_MS).emit('room:join', code, name, ack),
+  );
 }
 
 export function rejoinRoom(socket: GameSocket, code: string, token: string): Promise<RejoinAck> {
-  return callAck<RejoinAck>((ack) => socket.emit('room:rejoin', code, token, ack));
+  return callAck<RejoinAck>((ack) =>
+    socket.timeout(ACK_TIMEOUT_MS).emit('room:rejoin', code, token, ack),
+  );
 }
 
 export function startGame(socket: GameSocket): Promise<OkAck> {
-  return callAck<OkAck>((ack) => socket.emit('room:start', ack));
+  return callAck<OkAck>((ack) => socket.timeout(ACK_TIMEOUT_MS).emit('room:start', ack));
 }
 
 /** Lobby-only quit: frees the seat server-side; the caller resets the UI. */
 export function leaveRoom(socket: GameSocket): Promise<OkAck> {
-  return callAck<OkAck>((ack) => socket.emit('room:leave', ack));
+  return callAck<OkAck>((ack) => socket.timeout(ACK_TIMEOUT_MS).emit('room:leave', ack));
 }
 
 /** Lobby-only: seat an AI player (lowest free seat, server-held token). */
 export function addBot(socket: GameSocket): Promise<AddBotAck> {
-  return callAck<AddBotAck>((ack) => socket.emit('room:addBot', ack));
+  return callAck<AddBotAck>((ack) => socket.timeout(ACK_TIMEOUT_MS).emit('room:addBot', ack));
 }
 
 /** Lobby-only: retire an AI player and free its seat. */
 export function removeBot(socket: GameSocket, seat: number): Promise<OkAck> {
-  return callAck<OkAck>((ack) => socket.emit('room:removeBot', seat, ack));
+  return callAck<OkAck>((ack) => socket.timeout(ACK_TIMEOUT_MS).emit('room:removeBot', seat, ack));
 }
 
 /** Ask the strategy assistant; it answers from the caller's own view or acks an error code. */
 export function requestStrategy(socket: GameSocket): Promise<StrategyReply> {
-  return callAck<StrategyReply>((ack) => socket.emit('assistant:strategy', ack));
+  return callAck<StrategyReply>((ack) =>
+    socket.timeout(ACK_TIMEOUT_MS).emit('assistant:strategy', ack),
+  );
 }
 
 /** Email a join link to a friend; the server validates, budgets, and sends. */
 export function sendInvite(socket: GameSocket, email: string): Promise<OkAck> {
-  return callAck<OkAck>((ack) => socket.emit('room:invite', email, ack));
+  return callAck<OkAck>((ack) => socket.timeout(ACK_TIMEOUT_MS).emit('room:invite', email, ack));
 }
 
 /**
@@ -106,7 +129,9 @@ export function requestPostgameAnalysis(
   socket: GameSocket | null | undefined,
 ): Promise<PostgameReply> {
   if (!socket) return Promise.reject(new AckError('NOT_IN_ROOM'));
-  return callAck<PostgameReply>((ack) => socket.emit('postgame:analysis', ack));
+  return callAck<PostgameReply>((ack) =>
+    socket.timeout(ACK_TIMEOUT_MS).emit('postgame:analysis', ack),
+  );
 }
 
 /** Fire-and-forget: rejections arrive as `game:error`, not as an ack. */

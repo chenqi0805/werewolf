@@ -7,6 +7,7 @@ import {
   type VoiceRecognitionResult,
   type VoiceRecognizer,
   type VoiceSessionDeps,
+  type VoiceStream,
 } from './voiceSession';
 
 /**
@@ -61,13 +62,22 @@ interface SessionHarness {
   streamStops: number;
   recorderStops: number;
   nowMs: number;
+  /** Streams handed to startRecorder, in adoption order. */
+  recorderStreams: VoiceStream[];
+  grantsPending(): number;
+  grantMic(index?: number): void;
+  rejectMic(index?: number, error?: Error): void;
 }
 
 function makeSession(opts?: {
   recognizer?: VoiceRecognizer | null;
   mic?: 'ok' | 'denied';
+  /** Hold requestMic promises until grantMic/rejectMic release them. */
+  deferMic?: boolean;
 }): SessionHarness {
   const recognizer = opts?.recognizer === undefined ? fakeRecognizer() : opts.recognizer;
+  const grants: Array<(stream: VoiceStream) => void> = [];
+  const rejections: Array<(error: Error) => void> = [];
   const harness: SessionHarness = {
     session: null as unknown as VoiceSession,
     recognizer: null as unknown as EmittableRecognizer,
@@ -79,19 +89,30 @@ function makeSession(opts?: {
     streamStops: 0,
     recorderStops: 0,
     nowMs: 100_000,
+    recorderStreams: [],
+    grantsPending: () => grants.length,
+    grantMic: (index = 0) => grants[index]?.({ stop: () => void harness.streamStops++ }),
+    rejectMic: (index = 0, error = new Error('denied')) => rejections[index]?.(error),
   };
   let emitChunk: ((chunk: ArrayBuffer) => void) | null = null;
   if (recognizer !== null) harness.recognizer = recognizer as EmittableRecognizer;
   const deps: VoiceSessionDeps = {
-    requestMic: async () => {
+    requestMic: () => {
       if (opts?.mic === 'denied') {
         const error = new Error('denied');
         error.name = 'NotAllowedError';
-        throw error;
+        return Promise.reject(error);
       }
-      return { stop: () => void harness.streamStops++ };
+      if (opts?.deferMic === true) {
+        return new Promise<VoiceStream>((resolve, reject) => {
+          grants.push(resolve);
+          rejections.push(reject);
+        });
+      }
+      return Promise.resolve({ stop: () => void harness.streamStops++ });
     },
-    startRecorder: (_stream, onChunk) => {
+    startRecorder: (stream, onChunk) => {
+      harness.recorderStreams.push(stream);
       emitChunk = onChunk;
       return { stop: () => void harness.recorderStops++ };
     },
@@ -232,6 +253,47 @@ describe('VoiceSession', () => {
     harness.session.end(); // the permission prompt is still open
     await Promise.resolve();
     expect(harness.session.current().status).toBe('silent');
+  });
+
+  it('releases the orphan when a stale grant lands on a newer slot', async () => {
+    // Slot A's permission prompt is open when A ends and B begins; A's grant
+    // must release instead of adopting over B's slot.
+    const harness = makeSession({ deferMic: true });
+    begin(harness, 'speech:0:1000');
+    harness.session.end();
+    begin(harness, 'speech:1:1002');
+    expect(harness.grantsPending()).toBe(2);
+
+    harness.grantMic(0); // A's grant resolves after B began
+    await Promise.resolve();
+    expect(harness.streamStops).toBe(1); // the orphan stream released
+    expect(harness.recorderStreams).toHaveLength(0); // never recorded
+    expect(harness.frames).toHaveLength(0);
+
+    harness.grantMic(1); // B's grant is the live slot's
+    await Promise.resolve();
+    expect(harness.session.current().status).toBe('recording');
+    expect(harness.recorderStreams).toHaveLength(1); // exactly one adopted stream
+    expect(harness.recognizer.starts).toEqual([0]); // captions started once, for B
+    harness.emitFrame(32);
+    expect(harness.frames).toHaveLength(1); // exactly one stream relays frames
+
+    harness.session.end();
+    expect(harness.streamStops).toBe(2); // the adopted stream releases with the slot
+  });
+
+  it('a stale grant rejection does not clobber the live slot', async () => {
+    const harness = makeSession({ deferMic: true });
+    begin(harness, 'speech:0:1000');
+    harness.session.end();
+    begin(harness, 'speech:1:1002');
+    harness.rejectMic(0); // A's prompt ends in denial after B began
+    await Promise.resolve();
+    expect(harness.session.current().status).toBe('requesting'); // B still waiting
+    harness.grantMic(1);
+    await Promise.resolve();
+    expect(harness.session.current().status).toBe('recording');
+    expect(harness.recognizer.starts).toEqual([0]);
   });
 
   it('ignores a begin for the slot it is already capturing', async () => {

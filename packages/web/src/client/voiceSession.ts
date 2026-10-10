@@ -180,13 +180,20 @@ export class VoiceSession {
   }
 
   private async requestMic(): Promise<void> {
+    // The slot that asked for the mic — a begin() while the grant is in
+    // flight rebinds the session to a different key.
+    const requestedKey = this.key;
     try {
       const stream = await this.deps.requestMic();
-      if (this.ended) {
-        // The prompt outlived the slot — release immediately.
+      if (this.ended || this.key !== requestedKey) {
+        // The prompt outlived its slot, or the slot changed while the grant
+        // was in flight — this stream belongs to nobody; release it.
         stream.stop();
         return;
       }
+      // Adopt for this slot only: stop any previous recorder/stream first so
+      // an overlapping grant never leaves an orphan capture relaying frames.
+      this.stopRecorderAndStream();
       this.stream = stream;
       this.recorder = this.deps.startRecorder(stream, (chunk) => {
         if (!this.ended && !this.submitted) this.handlers.onFrame(chunk);
@@ -206,7 +213,8 @@ export class VoiceSession {
         }
       }
     } catch (error) {
-      if (this.ended) return;
+      // A stale grant's rejection belongs to its own slot, not the live one.
+      if (this.ended || this.key !== requestedKey) return;
       this.patch({ status: 'unavailable', error: micErrorMessage(error) });
       this.stopRecognizer();
     }
@@ -264,13 +272,8 @@ export class VoiceSession {
     }
   }
 
-  /** Stops every capture resource; never touches the visible status. */
-  private teardownCapture(): void {
-    if (this.cancelSubmit !== null) {
-      this.cancelSubmit();
-      this.cancelSubmit = null;
-    }
-    this.stopRecognizer();
+  /** Stops the recorder and capture stream; never touches recognizer or schedule. */
+  private stopRecorderAndStream(): void {
     if (this.recorder !== null) {
       const recorder = this.recorder;
       this.recorder = null;
@@ -285,6 +288,16 @@ export class VoiceSession {
       this.stream = null;
       stream.stop(); // release the microphone the moment capture stops
     }
+  }
+
+  /** Stops every capture resource; never touches the visible status. */
+  private teardownCapture(): void {
+    if (this.cancelSubmit !== null) {
+      this.cancelSubmit();
+      this.cancelSubmit = null;
+    }
+    this.stopRecognizer();
+    this.stopRecorderAndStream();
   }
 
   private set(next: VoiceSpeechState): void {

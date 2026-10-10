@@ -40,13 +40,17 @@ interface Emits {
 function fakeSocket(): Emits {
   const events: string[] = [];
   const acks = new Map<string, unknown>();
+  const emit = (event: string, ...args: unknown[]): unknown => {
+    events.push(event);
+    const ack = args.at(-1);
+    // The timeout-decorated ack contract: (err = null, resp) on a server answer.
+    if (typeof ack === 'function' && acks.has(event)) ack(null, acks.get(event));
+    return undefined;
+  };
   const socket = {
-    emit: (event: string, ...args: unknown[]): unknown => {
-      events.push(event);
-      const ack = args.at(-1);
-      if (typeof ack === 'function' && acks.has(event)) ack(acks.get(event));
-      return undefined;
-    },
+    // The wrappers arm a timeout budget before emitting.
+    timeout: (): { emit: typeof emit } => ({ emit }),
+    emit,
   } as unknown as GameSocket;
   return {
     socket,
