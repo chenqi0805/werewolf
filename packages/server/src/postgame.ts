@@ -5,9 +5,11 @@ import {
   askStrictJson,
   CONTEXT_LABELS,
   defaultProviderFetch,
+  delimitSpeech,
   parseStrictJsonObject,
   resolveAssistantProvider,
   ROLE_LABELS,
+  SPEECH_DELIMITER_NOTICE,
   speechRecordsOf,
   type AssistantOptions,
   type AssistantProvider,
@@ -212,6 +214,7 @@ export function buildPostgamePrompt(state: GameState): string {
   const records = speechRecordsOf(state.log);
   const lines: string[] = [
     '你是狼人杀桌游的复盘助手。比赛已经结束,所有身份都已公开。请通读下面的完整对局记录,给出这场比赛的复盘。',
+    SPEECH_DELIMITER_NOTICE,
     '',
     '## 输出格式(严格遵守)',
     '只输出一个 JSON 对象,不要使用 Markdown 代码块,不要输出 JSON 以外的任何文字,字段与类型如下:',
@@ -243,7 +246,9 @@ export function buildPostgamePrompt(state: GameState): string {
       lines.push(`第${record.day}天:`);
       lastDay = record.day;
     }
-    lines.push(`- ${record.seat}号(${CONTEXT_LABELS[record.context]}):“${record.text}”`);
+    lines.push(
+      `- ${record.seat}号(${CONTEXT_LABELS[record.context]}):${delimitSpeech(record.text)}`,
+    );
   }
   if (records.length === 0) lines.push('(还没有发言记录)');
   lines.push('', '## 投票记录');
