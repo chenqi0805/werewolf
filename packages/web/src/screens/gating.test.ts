@@ -329,9 +329,9 @@ describe('canSpeakNow and speechContextOf', () => {
     expect(
       canSpeakNow(view({ you: dead, step: { kind: 'last-words', queue: [4], cursor: 0 } })),
     ).toBe(false); // another seat's last words
-    expect(
-      canSpeakNow(view({ you: dead, step: { kind: 'speech', order: [4], cursor: 0 } })),
-    ).toBe(false); // dead seats never hold the day speech
+    expect(canSpeakNow(view({ you: dead, step: { kind: 'speech', order: [4], cursor: 0 } }))).toBe(
+      false,
+    ); // dead seats never hold the day speech
   });
 
   it('exposes the speech context for panel captions', () => {
