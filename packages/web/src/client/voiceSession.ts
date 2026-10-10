@@ -148,12 +148,6 @@ export class VoiceSession {
       recognizer.onresult = (result) => this.onResult(result);
       recognizer.onerror = (message) => this.patch({ error: `转写不可用（${message}）` });
       recognizer.onend = () => this.restartRecognizer();
-      try {
-        recognizer.start();
-      } catch (error) {
-        // A synchronous start failure kills captions, not capture.
-        this.patch({ error: micErrorMessage(error) });
-      }
     }
 
     if (opts.deadlineAtMs !== null) {
@@ -199,6 +193,17 @@ export class VoiceSession {
       });
       if (this.state.status === 'requesting') {
         this.patch({ status: this.recognizer === null ? 'unsupported' : 'recording' });
+      }
+      // The mic owns the device: start the recognizer only once the capture
+      // stream is live, so the speech service never contends for it first.
+      const recognizer = this.recognizer;
+      if (recognizer !== null) {
+        try {
+          recognizer.start();
+        } catch (error) {
+          // A synchronous start failure kills captions, not capture.
+          this.patch({ error: micErrorMessage(error) });
+        }
       }
     } catch (error) {
       if (this.ended) return;
