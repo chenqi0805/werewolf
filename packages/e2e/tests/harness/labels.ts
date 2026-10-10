@@ -51,6 +51,7 @@ export const SELECTORS = {
   directionPrompt: ':text("警长决定发言方向")',
   guardPad: 'section[aria-label="守卫守护"]',
   destructControl: 'section[aria-label="白狼王自爆"]',
+  explodeControl: 'section[aria-label="狼人自爆"]',
   addBotButton: 'button:has-text("添加AI玩家")',
   boardOptionWolfKing: 'button.scr-board-option:has-text("白狼王局")',
   inviteGroup: '[aria-label="邮件邀请"]',

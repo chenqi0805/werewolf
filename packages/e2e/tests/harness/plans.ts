@@ -151,6 +151,31 @@ export function botMixPlan(): PlayPlan {
   };
 }
 
+/**
+ * E — 竞选局: one human host sits with eleven scripted bots, and the dealt
+ * seer runs for sheriff — a scripted seer signs up by itself, and if the
+ * host holds the seer the plan raises her hand instead. The 警下 bots back
+ * the lowest candidate, so the election lands deterministically. The first
+ * knife is saved (the scripted witch does the same) so the seer always
+ * survives to her podium, and her own exile ballot votes so the public
+ * tally carries the sheriff's 1.5-weight vote.
+ */
+export function electionPlan(roles: Map<Seat, Role>): PlayPlan {
+  const seer = [...roles.entries()].find(([, role]) => role === 'seer')?.[0];
+  return {
+    wolfKill: (_day, targets) => targets[0] ?? null,
+    witch: (day, victim) => (day === 1 && victim !== null ? { kind: 'heal' } : { kind: 'pass' }),
+    seerCheck: (_day, targets) => targets[0] ?? fail('seer has no unchecked target'),
+    sheriffCandidates: seer === undefined ? [] : [seer],
+    speech: () => '过',
+    sheriffVote: () => null, // the host abstains; the scripted 警下 elect the seer
+    exileVote: (seat, _day, candidates) =>
+      seer !== undefined && seat === seer ? (candidates[0] ?? null) : null,
+    hunterShot: () => null,
+    badgePass: () => null,
+  };
+}
+
 function fail(why: string): number {
   throw new Error(`plan dead-end: ${why}`);
 }
