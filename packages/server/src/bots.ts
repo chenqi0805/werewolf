@@ -62,6 +62,12 @@ export class BotManager {
         rng: mulberry32(seedFromString(`${room.code}#${seat}`)),
         onEnd: (reason) => {
           console.log(`[werewolf] bot ${name} (${room.code}#${seat}) stopped: ${reason}`);
+          // Any end vacates the map — "map entry = live runner" is the
+          // invariant spawnFor's skip-guard leans on. A connect-failed
+          // runner must not block its seat's respawn for the process
+          // lifetime; finished-game rooms are skipped by spawnFor anyway,
+          // so a game-over end loses nothing.
+          this.runners.get(room.code)?.delete(seat);
         },
       });
       runner.start();
