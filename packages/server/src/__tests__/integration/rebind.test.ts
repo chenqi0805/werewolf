@@ -79,7 +79,9 @@ describe('one room per socket — the rebind invariant', () => {
     // Room A's game runs on without X's wire identity — any seated player
     // may start (the documented product model), and compact clocks carry
     // night 1 through to the day floor.
-    await startRoom(joiners[0].client);
+    const starter = joiners[0];
+    if (!starter) throw new Error('rig setup: missing starter');
+    await startRoom(starter.client);
     await waitFor(() => currentSpeakerIn(joiners) !== null, 20_000);
     const speaker = currentSpeakerIn(joiners);
     if (!speaker) throw new Error('rig setup: no speech slot opened');
@@ -127,8 +129,9 @@ describe('one room per socket — the rebind invariant', () => {
     await waitFor(() => occupiedSeats(x.rec).length === 12, 5000);
     expect(x.rec.latest?.you.seat).toBe(1);
 
-    // And the full stream — events included — flows once the game starts.
-    await startRoom(joiners[0].client);
+    const starter = joiners[0];
+    if (!starter) throw new Error('rig setup: missing starter');
+    await startRoom(starter.client);
     await waitFor(() => x.rec.events.length > 0, 5000);
     await waitFor(() => x.rec.latest?.phase !== 'lobby', 5000);
     sweepAllPayloads(rig);
