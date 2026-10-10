@@ -46,6 +46,7 @@ const view = (overrides: Partial<PlayerView> = {}): PlayerView => ({
   phase: 'night',
   dayNumber: 1,
   winner: null,
+  board: 'classic',
   you: you(),
   players: [row(1), row(2), row(3), row(4), row(5)],
   step: { kind: 'night', step: 'wolf' },

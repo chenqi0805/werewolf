@@ -120,6 +120,11 @@ export class Room {
     return this.currentState;
   }
 
+  /** The dealt board — authoritative for restored rooms too (replayed state). */
+  get boardId(): BoardId {
+    return this.currentState.board;
+  }
+
   get seatedCount(): number {
     return this.seats.size;
   }

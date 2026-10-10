@@ -1,5 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
-import type { PlayerAction } from '@werewolf/engine';
+import type { BoardId, PlayerAction } from '@werewolf/engine';
 import type {
   AddBotAck,
   ClientToServerEvents,
@@ -50,8 +50,8 @@ function callAck<T>(emit: (ack: (resp: AckOf<T>) => void) => void): Promise<T> {
   });
 }
 
-export function createRoom(socket: GameSocket): Promise<CreateAck> {
-  return callAck<CreateAck>((ack) => socket.emit('room:create', ack));
+export function createRoom(socket: GameSocket, board: BoardId = 'classic'): Promise<CreateAck> {
+  return callAck<CreateAck>((ack) => socket.emit('room:create', { board }, ack));
 }
 
 export function joinRoom(socket: GameSocket, code: string): Promise<JoinAck> {

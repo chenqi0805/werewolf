@@ -7,6 +7,7 @@ const view = (overrides: Partial<PlayerView> = {}): PlayerView => ({
   phase: 'lobby',
   dayNumber: 0,
   winner: null,
+  board: 'classic',
   you: {
     seat: 3,
     role: null,

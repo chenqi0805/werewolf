@@ -14,7 +14,8 @@ export type RoomErrorCode =
   | 'SERVER_ACTION_FORBIDDEN'
   | 'ROOM_NOT_FULL'
   | 'ALREADY_STARTED'
-  | 'NOT_A_BOT';
+  | 'NOT_A_BOT'
+  | 'INVALID_BOARD';
 
 export class RoomError extends Error {
   constructor(

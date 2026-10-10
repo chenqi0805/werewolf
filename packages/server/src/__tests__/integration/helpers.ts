@@ -1,5 +1,6 @@
 import type { AddressInfo } from 'node:net';
-import type { GameEvent, PlayerAction, Seat } from '@werewolf/engine';
+import type { BoardId, GameEvent, PlayerAction, Seat } from '@werewolf/engine';
+import { campOf } from '@werewolf/engine';
 import {
   createApp,
   type AppHandle,
@@ -127,9 +128,9 @@ export async function waitFor(pred: () => boolean, timeoutMs = 5000): Promise<vo
   }
 }
 
-export async function createRoom(socket: Client): Promise<CreateAck> {
+export async function createRoom(socket: Client, board?: BoardId): Promise<CreateAck> {
   return new Promise((resolve, reject) => {
-    socket.emit('room:create', (resp) => {
+    socket.emit('room:create', board ? { board } : undefined, (resp) => {
       if ('error' in resp) reject(new Error(resp.error));
       else resolve(resp);
     });
@@ -220,11 +221,23 @@ function actOnce(socket: Client, view: PlayerView, sent: Set<string>): void {
   const key = `${seat}:d${view.dayNumber}:${view.phase}`;
   const send = (action: PlayerAction) => socket.emit('game:action', action);
 
+  // The guard pends before the pack: nobody else may act while his step is
+  // open, so the driver settles it first. 空守 is on by default, so a pass
+  // is always legal here.
+  if (view.step.kind === 'night' && view.step.guardPending && you.alive && you.role === 'guard') {
+    const k = `${key}:guard`;
+    if (sent.has(k)) return;
+    sent.add(k);
+    send({ type: 'GUARD_PASS', actor: seat });
+    return;
+  }
   if (
     view.step.kind === 'night' &&
+    !view.step.guardPending &&
     view.step.step === 'wolf' &&
     you.alive &&
-    you.role === 'werewolf'
+    you.role !== null &&
+    campOf(you.role) === 'wolf'
   ) {
     const k = `${key}:wolf`;
     if (sent.has(k)) return;
@@ -315,8 +328,17 @@ function actOnce(socket: Client, view: PlayerView, sent: Set<string>): void {
     const k = `${key}:hunter`;
     if (sent.has(k)) return;
     sent.add(k);
+    if (you.role === 'white_wolf_king' && !you.destructUsed) {
+      // The dead king's settlement window: take the first living non-wolf
+      // seat with him.
+      const mark = alive.find((s) => !you.wolfPack?.includes(s));
+      if (mark !== undefined) send({ type: 'WOLF_KING_DESTRUCT', actor: seat, target: mark });
+      return;
+    }
     const target = alive.find((s) => s !== seat);
-    if (target !== undefined) send({ type: 'HUNTER_SHOOT', actor: seat, target });
+    if (you.role === 'hunter' && !you.hunterShotUsed && target !== undefined) {
+      send({ type: 'HUNTER_SHOOT', actor: seat, target });
+    }
     return;
   }
   if (view.step.kind === 'badge-pass' && view.step.seat === seat) {
@@ -353,10 +375,12 @@ export function sweepAllPayloads(rig: Rig): void {
     for (const view of rec.views) {
       const over = view.phase === 'game-over';
       const youRole = view.players.find((r) => r.seat === view.you.seat)?.role ?? null;
+      const youIsWolf = youRole !== null && campOf(youRole) === 'wolf';
       const revealed = new Set<Seat>();
       for (const e of view.log) {
         if (e.type === 'IDIOT_REVEALED') revealed.add(e.seat);
         if (e.type === 'HUNTER_SHOT') revealed.add(e.shooter);
+        if (e.type === 'WHITE_WOLF_KING_DESTRUCTED') revealed.add(e.actor);
       }
       for (const row of view.players) {
         if (row.role === null) continue;
@@ -364,13 +388,13 @@ export function sweepAllPayloads(rig: Rig): void {
           row.seat === view.you.seat ||
           over ||
           revealed.has(row.seat) ||
-          (youRole === 'werewolf' && row.role === 'werewolf');
+          (youIsWolf && row.role !== null && campOf(row.role) === 'wolf');
         expect(
           allowed,
           `client ${i} saw seat ${row.seat} as ${row.role} in phase ${view.phase}`,
         ).toBe(true);
       }
-      if (youRole !== 'werewolf') {
+      if (!youIsWolf) {
         expect(view.you.wolfPack, `client ${i} received the wolf pack`).toBeUndefined();
       }
       if (youRole !== 'seer') {

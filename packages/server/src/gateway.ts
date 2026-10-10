@@ -1,7 +1,7 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
-import type { GameEvent, PlayerAction, Seat } from '@werewolf/engine';
-import { GameError } from '@werewolf/engine';
+import type { BoardId, GameEvent, PlayerAction, Seat } from '@werewolf/engine';
+import { BOARDS, GameError } from '@werewolf/engine';
 import { RoomError } from './errors';
 import { BotManager } from './bots';
 import type { BotStrategy } from '@werewolf/bots';
@@ -30,6 +30,8 @@ export interface CreateAck {
   roomCode: string;
   seat: Seat;
   sessionToken: string;
+  /** The dealt board — echoed so the creator's UI can name the game. */
+  board: BoardId;
 }
 
 export type JoinAck = CreateAck | { roomCode: string; spectator: true };
@@ -65,7 +67,7 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
-  'room:create': (ack: Ack<CreateAck>) => void;
+  'room:create': (payload: { board?: BoardId } | undefined, ack: Ack<CreateAck>) => void;
   'room:join': (code: string, ack: Ack<JoinAck>) => void;
   'room:rejoin': (code: string, token: string, ack: Ack<RejoinAck>) => void;
   'room:start': (ack: Ack<OkAck>) => void;
@@ -345,12 +347,21 @@ export function attachGateway(
   }
 
   io.on('connection', (socket) => {
-    socket.on('room:create', (ack) => {
+    socket.on('room:create', (payload, ack) => {
       if (typeof ack !== 'function') return;
-      const room = registry.create();
+      // The board is creation-time data: it picks the dealt deck and the
+      // frozen config. Absent reads as classic (v1 clients); anything else
+      // that is not a registry id is rejected before a room is minted.
+      const requested = (payload as { board?: unknown } | undefined)?.board;
+      if (requested !== undefined && (typeof requested !== 'string' || !(requested in BOARDS))) {
+        ack({ error: 'INVALID_BOARD' });
+        return;
+      }
+      const board = (requested as BoardId | undefined) ?? 'classic';
+      const room = registry.create(board);
       const { seat, sessionToken } = room.join();
       bind(socket, room.code, seat);
-      ack({ roomCode: room.code, seat, sessionToken });
+      ack({ roomCode: room.code, seat, sessionToken, board });
       broadcastOccupancy(room);
     });
 
@@ -371,7 +382,7 @@ export function attachGateway(
       try {
         const { seat, sessionToken } = room.join();
         bind(socket, room.code, seat);
-        ack({ roomCode: room.code, seat, sessionToken });
+        ack({ roomCode: room.code, seat, sessionToken, board: room.boardId });
         broadcastOccupancy(room);
       } catch (error) {
         ack({ error: errorPayload(error).code });
