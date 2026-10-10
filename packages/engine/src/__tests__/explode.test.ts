@@ -230,8 +230,12 @@ describe('wolf explode — interrupts inside the release', () => {
     s = apply(s, { type: 'HUNTER_SHOOT', actor: 11, target: 6 });
     expect(s.phase).toBe('night');
     const shot = at(s, 'HUNTER_SHOT');
-    expect(shot).toBeGreaterThan(at(s, 'DEATH_ANNOUNCED', (e) => e.seat === 11));
-    expect(at(s, 'NIGHT_BEGAN', (e) => e.dayNumber === 2)).toBeGreaterThan(shot);
+    expect(shot).toBeGreaterThan(
+      at(s, 'DEATH_ANNOUNCED', (e) => e.type === 'DEATH_ANNOUNCED' && e.seat === 11),
+    );
+    expect(
+      at(s, 'NIGHT_BEGAN', (e) => e.type === 'NIGHT_BEGAN' && e.dayNumber === 2),
+    ).toBeGreaterThan(shot);
     expect(at(s, 'SPEECH_MADE')).toBe(-1);
   });
 
