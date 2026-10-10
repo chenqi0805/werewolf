@@ -2,6 +2,7 @@ import type { GameEvent, Role, Seat } from '@werewolf/engine';
 import type { RoomRegistry } from './room';
 import { currentSpeechSlot, type SpeechContext, type SpeechSlot } from './voice';
 import { viewFor, type PlayerView } from './view';
+import { Agent } from 'undici';
 
 /**
  * The AI speech-strategy assistant — an opt-in proxy, never a player.
@@ -21,6 +22,23 @@ import { viewFor, type PlayerView } from './view';
  *  3. Neither — every request acks ASSISTANT_UNAVAILABLE; the panel shows
  *     未配置 and nothing else happens.
  */
+
+// CPU-backed local LLM endpoints (e.g. Ollama qwen3:8b on 2 cores) regularly
+// need more than undici's 300 s default headersTimeout before the first
+// response bytes arrive — observed as `UND_ERR_HEADERS_TIMEOUT` aborting the
+// hosted 复盘 generation. Provider calls therefore carry a 15-minute
+// dispatcher timeout. This still routes through the global fetch (so tests
+// can stub it); Node's fetch honors the undici `dispatcher` option.
+export const PROVIDER_TIMEOUT_MS = 900_000;
+const providerAgent = new Agent({
+  headersTimeout: PROVIDER_TIMEOUT_MS,
+  bodyTimeout: PROVIDER_TIMEOUT_MS,
+});
+// The lambda is structurally compatible with global fetch but its init
+// carries the undici-only `dispatcher` field, so one cast keeps
+// `fetchImpl: typeof fetch` honest.
+export const defaultProviderFetch = ((input: RequestInfo, init?: RequestInit) =>
+  fetch(input, { ...init, dispatcher: providerAgent } as RequestInit)) as unknown as typeof fetch;
 
 export interface StrategyReply {
   /** 可照念的发言要点 — first-person, spoken-style zh. */
@@ -483,7 +501,7 @@ export function attachAssistant(
   opts: AssistantOptions = {},
 ): void {
   const provider = resolveAssistantProvider(opts);
-  const fetchImpl = opts.fetchImpl ?? fetch;
+  const fetchImpl = opts.fetchImpl ?? defaultProviderFetch;
   const maxRequests = opts.maxRequestsPerSlot ?? 3;
   const budgets = new Map<string, SlotBudget>();
 

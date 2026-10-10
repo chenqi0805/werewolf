@@ -22,6 +22,7 @@
   "dependencies": {
     "@werewolf/bots": "*",
     "better-sqlite3": "^12.11.1",
-    "socket.io": "^4.8.4"
+    "socket.io": "^4.8.4",
+    "undici": "^7.30.0"
   }
 }
