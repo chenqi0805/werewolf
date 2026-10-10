@@ -204,14 +204,25 @@ interface LobbyBudget {
 /**
  * Registers the room:invite handler. Always attached: with no sender
  * configured every request still acks — INVITE_UNAVAILABLE — so clients
- * never hang on a missing feature. Returns whether a sender resolved, the
- * capability hint the lobby view carries (no extra round trip).
+ * never hang on a missing feature. Returns the capability hint the lobby
+ * view carries plus the seat-freed hook the gateway calls on leave/removeBot.
  */
+export interface InvitesAttachment {
+  /** The lobby capability hint — the view's inviteAvailable. */
+  available: boolean;
+  /**
+   * Drops the room:seat budget when a seat is freed (quit / bot removal):
+   * the budget belongs to the seat's occupant, not the seat number, so the
+   * next occupant starts with a fresh allowance.
+   */
+  clearSeatBudget(roomCode: string, seat: Seat): void;
+}
+
 export function attachInvites(
   io: InviteServer,
   registry: Pick<RoomRegistry, 'get'>,
   opts?: InviteOptions,
-): boolean {
+): InvitesAttachment {
   const sender = resolveInviteSender(opts);
   const baseUrl = opts?.baseUrl ?? '';
   const maxInvites = opts?.maxInvitesPerLobby ?? MAX_INVITES_PER_LOBBY;
@@ -230,6 +241,13 @@ export function attachInvites(
       const room = roomCode !== null ? registry.get(roomCode) : undefined;
       if (!room || seat === null) {
         ack({ error: 'NOT_IN_ROOM' });
+        return;
+      }
+      // Invites are a lobby affordance: the engine rejects joins once the
+      // game is running, so a mid-game send would only burn budget on a
+      // dead link. Gate before any budget state is touched.
+      if (room.hasStarted()) {
+        ack({ error: 'GAME_RUNNING' });
         return;
       }
       // Address validation precedes budget and provider: a malformed input
@@ -287,5 +305,10 @@ export function attachInvites(
     });
   });
 
-  return sender !== null;
+  return {
+    available: sender !== null,
+    clearSeatBudget(roomCode, seat) {
+      budgets.delete(`${roomCode}:${seat}`);
+    },
+  };
 }

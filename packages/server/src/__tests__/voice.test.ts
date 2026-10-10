@@ -313,6 +313,21 @@ describe('VoiceHub', () => {
     expect(hub.takeBuffer('TEST', slot.key)).toBeNull();
   });
 
+  it('drops a room buffer outright with dropRoom, leaving other rooms alone', () => {
+    const hub = new VoiceHub(new FakeHost(), { stt: STT });
+    const room = driveToSpeech();
+    const slot = slotAt(room);
+    hub.noteFrame('TEST', slot, bytes('audio'));
+    hub.noteFrame('OTHER', slot, bytes('audio'));
+
+    hub.dropRoom('TEST');
+    expect(hub.takeBuffer('TEST', slot.key)).toBeNull();
+    expect(hub.takeBuffer('OTHER', slot.key)).toBeTruthy();
+
+    // Unknown room codes are a no-op.
+    hub.dropRoom('MISSING');
+  });
+
   it('returns the provider transcript', async () => {
     const hub = new VoiceHub(new FakeHost(), {
       stt: STT,

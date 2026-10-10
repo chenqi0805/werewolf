@@ -171,7 +171,12 @@ export function attachGateway(
   opts?: GatewayOptions,
   store?: EventStore,
   botManager?: BotManager,
-): { dispose(): void; rearmRestored(room: Room, timer: TimerRowRaw | null): void } {
+): {
+  dispose(): void;
+  rearmRestored(room: Room, timer: TimerRowRaw | null): void;
+  /** The relay/buffer hub — surfaced on the app handle for integration tests. */
+  voiceHub: VoiceHub;
+} {
   const timers: Record<string, number> = { ...DEFAULT_TIMERS, ...opts?.timers };
   const roomSockets = new Map<string, Set<GatewaySocket>>();
   const roomTimers = new Map<string, NodeJS.Timeout>();
@@ -185,9 +190,11 @@ export function attachGateway(
   );
   attachAssistant(io, registry, opts?.assistant ?? {});
   attachPostgame(io, registry, opts?.postgame ?? {});
-  // The returned flag is the lobby's capability hint — the view says whether
-  // the 邮件邀请 affordance may show, with no extra round trip.
-  const invitesAvailable = attachInvites(io, registry, opts?.invites);
+  // The returned attachment carries the lobby capability hint — the view
+  // says whether the 邮件邀请 affordance may show — and the seat-freed hook
+  // the leave/removeBot paths call below.
+  const invites = attachInvites(io, registry, opts?.invites);
+  const invitesAvailable = invites.available;
 
   function bind(socket: GatewaySocket, roomCode: string, seat: Seat | null): void {
     // One room per socket: a socket already fanned out to another room leaves
@@ -273,6 +280,10 @@ export function attachGateway(
     if (key === null) {
       deadlines.delete(room.code);
       store?.clearTimer(room.code);
+      // No clock ever runs again in this state (lobby, game-over), so no
+      // expiry would consume a lingering speech buffer — drop it with the
+      // clock. Audio never outlives its slot.
+      voiceHub.dropRoom(room.code);
       return;
     }
     const ms = timers[key];
@@ -352,6 +363,9 @@ export function attachGateway(
     try {
       const slot: SpeechSlot | null = currentSpeechSlot(room.state);
       if (slot === null || !voiceHub.fallbackArmed()) {
+        // A closed slot must not outlive its audio: whatever a finished slot
+        // buffered is dropped here — no later expiry would ever consume it.
+        if (slot === null) voiceHub.dropRoom(room.code);
         finishExpiry(room);
         return;
       }
@@ -505,8 +519,10 @@ export function attachGateway(
         return;
       }
       // The token died with the seat; the socket goes back to the connect
-      // state and stops receiving this room's views.
+      // state and stops receiving this room's views. The seat is freed —
+      // its invite budget goes with it (the budget follows the occupant).
       unbind(socket);
+      invites.clearSeatBudget(room.code, seat);
       ack({ ok: true });
       broadcastOccupancy(room);
     });
@@ -553,6 +569,7 @@ export function attachGateway(
       }
       try {
         botManager.removeBot(room, botSeat);
+        invites.clearSeatBudget(room.code, botSeat);
         ack({ ok: true });
         broadcastOccupancy(room);
       } catch (error) {
@@ -619,6 +636,9 @@ export function attachGateway(
       voiceHub.dropAll();
     },
     rearmRestored,
+    // Test seam: the app handle exposes the hub so integration tests can
+    // observe buffer lifecycles end to end.
+    voiceHub,
   };
 }
 
@@ -644,6 +664,8 @@ export interface AppHandle {
   httpServer: HttpServer;
   /** Custodian of the loopback runners for every bot seat. */
   botManager: BotManager;
+  /** Voice relay + STT buffer hub — integration tests read buffer lifecycles. */
+  voiceHub: VoiceHub;
   close(): Promise<void>;
 }
 
@@ -696,6 +718,7 @@ export function createApp(opts?: AppOptions): AppHandle {
     registry,
     httpServer,
     botManager,
+    voiceHub: gateway.voiceHub,
     async close() {
       botManager.retireAll();
       gateway.dispose();

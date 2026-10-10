@@ -205,6 +205,15 @@ export class VoiceHub {
     return concatBytes(rv.chunks, rv.total);
   }
 
+  /**
+   * Drops a room's buffered audio outright — the slot it belonged to closed
+   * without a fallback decision (client SPEAK, game over). Audio never
+   * outlives its slot, on any path.
+   */
+  dropRoom(roomCode: string): void {
+    this.rooms.delete(roomCode);
+  }
+
   dropAll(): void {
     this.rooms.clear();
   }

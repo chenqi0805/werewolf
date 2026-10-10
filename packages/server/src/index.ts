@@ -141,6 +141,7 @@ export {
   RESEND_ENDPOINT,
   type MailSender,
   type InviteOptions,
+  type InvitesAttachment,
   type InviteAck,
   type InviteServer,
   type InviteSocket,
