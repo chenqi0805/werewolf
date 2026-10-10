@@ -73,7 +73,7 @@ function CandidateList({ seats }: { seats: SeatView[] }): JSX.Element {
  */
 export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): JSX.Element {
   const seats: SeatView[] = seatViewsOf(view);
-  const entries = logToEntries(view.log);
+  const entries = logToEntries(view.log, view.board);
   const speechGroups = speechByDayOf(view.log);
   const { you } = view;
   const step = view.step;

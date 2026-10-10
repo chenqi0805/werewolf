@@ -1,4 +1,6 @@
-import type { GameEvent, Seat } from '@werewolf/engine';
+import type { BoardId, GameEvent, Seat } from '@werewolf/engine';
+
+import { boardOptionOf } from '../boardOptions';
 import type { PlayerView, StepView, YouView } from '@werewolf/server';
 
 import type {
@@ -96,7 +98,11 @@ function isLoggedEvent(event: GameEvent): boolean {
 function logText(event: GameEvent): string | null {
   switch (event.type) {
     case 'GAME_STARTED':
+      // Fallback only — callers pass the view's board so the line names the
+      // actual deal (gameStartText).
       return '游戏开始：12人标准局（4狼·4民·预言家·女巫·猎人·白痴）';
+    case 'WHITE_WOLF_KING_DESTRUCTED':
+      return `${seatLabel(event.actor)}自爆，带走了${seatLabel(event.target)}`;
     case 'NIGHT_BEGAN':
       return `第 ${event.dayNumber} 夜来临`;
     case 'DAY_BROKE':
@@ -158,6 +164,7 @@ function logKind(event: GameEvent): LogKind {
     case 'DEATH_ANNOUNCED':
     case 'PLAYER_EXILED':
     case 'HUNTER_SHOT':
+    case 'WHITE_WOLF_KING_DESTRUCTED':
       return 'death';
     case 'VOTE_TALLY':
       return 'vote';
@@ -182,7 +189,7 @@ function logKind(event: GameEvent): LogKind {
  * NIGHT_BEGAN / DAY_BROKE; the server has already filtered the list to
  * what this viewer may see.
  */
-export function logToEntries(log: readonly GameEvent[]): LogEntry[] {
+export function logToEntries(log: readonly GameEvent[], board?: BoardId): LogEntry[] {
   let day = 1;
   const entries: LogEntry[] = [];
   log.forEach((event, index) => {
@@ -190,11 +197,18 @@ export function logToEntries(log: readonly GameEvent[]): LogEntry[] {
       day = event.dayNumber;
     }
     if (!isLoggedEvent(event)) return;
-    const text = logText(event);
+    const text =
+      event.type === 'GAME_STARTED' && board !== undefined ? gameStartText(board) : logText(event);
     if (text === null) return;
     entries.push({ id: `log-${index}`, day, kind: logKind(event), text });
   });
   return entries;
+}
+
+/** The opening log line names the board actually dealt, from the registry. */
+function gameStartText(board: BoardId): string {
+  const option = boardOptionOf(board);
+  return `游戏开始：${option.name}（${option.lineup}）`;
 }
 
 /** One accepted speech pinned to its day — the shared walk behind both transcript adapters. */

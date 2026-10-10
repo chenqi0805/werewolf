@@ -41,3 +41,8 @@ export interface BoardOption {
 export const BOARD_OPTIONS: readonly BoardOption[] = (Object.keys(BOARDS) as BoardId[]).map(
   (id) => ({ id, name: BOARDS[id].name, lineup: lineupOf(id) }),
 );
+
+/** One row by board id — the log's game-start line reads it. */
+export function boardOptionOf(id: BoardId): BoardOption {
+  return { id, name: BOARDS[id].name, lineup: lineupOf(id) };
+}
