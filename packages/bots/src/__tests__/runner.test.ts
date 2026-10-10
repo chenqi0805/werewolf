@@ -1,7 +1,7 @@
 import type { Seat } from '@werewolf/engine';
 import type { PlayerRow, PlayerView, StepView, YouView } from '@werewolf/server';
 import type { Socket } from 'socket.io-client';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BotRunner, type BotEndReason } from '../runner';
 import type { BotStrategy } from '../strategy';
@@ -163,6 +163,9 @@ function runnerOf(opts: {
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('BotRunner', () => {
+  beforeEach(() => {
+    ioMock.mockClear();
+  });
   it('stop() during an in-flight connect leaves no socket and fires onEnd exactly once', async () => {
     const onEnd = vi.fn();
     const strategy = silentStrategy();
@@ -191,5 +194,33 @@ describe('BotRunner', () => {
 
     runner.stop(); // idempotent — no second end
     expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('arms the rejoin ack with a timeout and retries when it never arrives', async () => {
+    const onEnd = vi.fn();
+    const runner = runnerOf({ strategy: silentStrategy(), onEnd });
+    const first = nextSocket();
+    runner.start();
+    first.fire('connect');
+    // The rejoin went out armed with a timeout budget — a silent server can
+    // no longer hang the attempt forever.
+    expect(first.timeouts).toHaveLength(1);
+    expect(first.timeouts[0]).toBeGreaterThan(0);
+
+    // socket.io delivers the expiry (or a mid-ack disconnect) as an Error
+    // to the ack — a connect failure, not a hanging promise.
+    rejoinAckOf(first)(new Error('operation has timed out'));
+    expect(first.disconnected).toBe(true);
+    const second = nextSocket(); // the retry's socket, queued before the loop re-asks
+    await vi.waitFor(() => expect(ioMock).toHaveBeenCalledTimes(2));
+
+    // The retry is a fresh socket with a fresh armed rejoin.
+    expect(second).not.toBe(first);
+    second.fire('connect');
+    expect(second.timeouts).toHaveLength(1);
+    expect(onEnd).not.toHaveBeenCalled();
+    runner.stop();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(onEnd).toHaveBeenCalledWith('stopped');
   });
 });

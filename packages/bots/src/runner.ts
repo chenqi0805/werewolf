@@ -10,6 +10,9 @@ import { io, type Socket } from 'socket.io-client';
 import { mulberry32, seedFromString } from './rng';
 import { recentSpeechOf, type BotDecision, type BotStrategy } from './strategy';
 
+/** Rejoin-ack round-trip budget — a silent ack counts as a connect failure. */
+const REJOIN_TIMEOUT_MS = 2_000;
+
 /** Why a runner stopped playing. `game-over` is the normal end. */
 export type BotEndReason = 'game-over' | 'stopped' | 'connect-failed' | 'bad-token';
 
@@ -155,16 +158,25 @@ export class BotRunner {
       socket.once('connect', () => {
         this.attach(socket);
         // Rejoin works pre-game and mid-game alike — a restarted server
-        // restored the seat's token, so the bot resumes its own body.
-        socket.emit('room:rejoin', this.opts.roomCode, this.opts.token, (resp) => {
-          if ('error' in resp) {
-            this.running = false;
-            this.finish('bad-token');
-            resolve(true); // connected but unauthorized: the runner is done
-          } else {
-            settle(true);
-          }
-        });
+        // restored the seat's token, so the bot resumes its own body. The
+        // ack is armed with a timeout: socket.io delivers nothing on a
+        // dropped transport for un-armed acks, so a blip between connect
+        // and ack used to hang this attempt forever.
+        socket
+          .timeout(REJOIN_TIMEOUT_MS)
+          .emit('room:rejoin', this.opts.roomCode, this.opts.token, (err: Error | null, resp) => {
+            if (err !== null) {
+              settle(false); // a silent ack is a connect failure — the loop retries
+              return;
+            }
+            if ('error' in resp) {
+              settle(true); // connected but unauthorized: the attempt itself succeeded
+              this.running = false;
+              this.finish('bad-token');
+            } else {
+              settle(true);
+            }
+          });
       });
       socket.once('connect_error', () => settle(false));
     });
@@ -192,10 +204,16 @@ export class BotRunner {
       debugRunner(this.opts.roomCode, error);
     });
     socket.on('disconnect', () => {
-      if (this.running) {
-        this.socket = null;
-        void this.connect();
+      if (!this.running) return;
+      this.socket = null;
+      if (this.pending !== null) {
+        // The transport dropped while an attempt was still settling (mid-
+        // rejoin): abort it — the connect loop's own retry carries on. A
+        // second loop here would race a duplicate socket for the seat.
+        this.abortConnect?.();
+        return;
       }
+      void this.connect();
     });
   }
 
