@@ -1,0 +1,123 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { MailSender } from '../../invites';
+import {
+  connect,
+  createRoom,
+  joinRoom,
+  startServer,
+  stopServer,
+  waitFor,
+  type Client,
+  type Rig,
+} from './helpers';
+
+const rigs: Rig[] = [];
+
+async function freshRig(...args: Parameters<typeof startServer>): Promise<Rig> {
+  const rig = await startServer(...args);
+  rigs.push(rig);
+  return rig;
+}
+
+afterEach(async () => {
+  while (rigs.length > 0) {
+    const rig = rigs.pop();
+    if (rig) await stopServer(rig);
+  }
+});
+
+/** Emits room:invite and resolves with the ack — typed through the gateway. */
+function invite(client: Client, email: string): Promise<{ ok: true } | { error: string }> {
+  return new Promise((resolve) => client.emit('room:invite', email, resolve));
+}
+
+/** A two-seat lobby: creator (seat 1) plus one friend. Returns the room code. */
+async function openLobby(rig: Rig): Promise<string> {
+  const creator = await connect(rig);
+  const { roomCode } = await createRoom(creator.client);
+  const friend = await connect(rig);
+  await joinRoom(friend.client, roomCode);
+  await waitFor(() => rig.recs.every((r) => r.latest !== null));
+  return roomCode;
+}
+
+describe('room:invite over real sockets', () => {
+  it('delivers the invite with the room code and full join link, and hints the lobby', async () => {
+    const sent: Array<{ to: string; subject: string; html: string }> = [];
+    const sendImpl: MailSender = async (mail) => void sent.push(mail);
+    const rig = await freshRig(undefined, {
+      invites: {
+        baseUrl: 'https://werewolf.example',
+        from: 'invites@werewolf.example',
+        sendImpl,
+      },
+    });
+    const roomCode = await openLobby(rig);
+
+    // The lobby view carries the capability hint — no extra round trip.
+    for (const rec of rig.recs) {
+      expect(rec.latest?.inviteAvailable).toBe(true);
+    }
+
+    const creator = rig.clients[0];
+    if (!creator) throw new Error('no creator client');
+    expect(await invite(creator, 'friend@example.com')).toEqual({ ok: true });
+    await waitFor(() => sent.length > 0);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe('friend@example.com');
+    expect(sent[0]?.subject).toContain(roomCode);
+    expect(sent[0]?.html).toContain(`https://werewolf.example/?room=${roomCode}`);
+  }, 15000);
+
+  it('hides the affordance and acks INVITE_UNAVAILABLE when unconfigured', async () => {
+    const rig = await freshRig();
+    await openLobby(rig);
+    for (const rec of rig.recs) {
+      expect(rec.latest?.inviteAvailable).toBeFalsy();
+    }
+    const creator = rig.clients[0];
+    if (!creator) throw new Error('no creator client');
+    expect(await invite(creator, 'friend@example.com')).toEqual({
+      error: 'INVITE_UNAVAILABLE',
+    });
+  }, 15000);
+
+  it('refuses unseated sockets with NOT_IN_ROOM', async () => {
+    const rig = await freshRig(undefined, {
+      invites: { baseUrl: 'https://werewolf.example', from: 'a@b.c', sendImpl: async () => {} },
+    });
+    // A client that connected but never joined a room.
+    const loner = await connect(rig);
+    expect(await invite(loner.client, 'friend@example.com')).toEqual({ error: 'NOT_IN_ROOM' });
+  }, 15000);
+
+  it('rejects malformed addresses with INVALID_EMAIL over the real socket', async () => {
+    const sendImpl: MailSender = vi.fn(async () => {});
+    const rig = await freshRig(undefined, {
+      invites: { baseUrl: 'https://werewolf.example', from: 'a@b.c', sendImpl },
+    });
+    await openLobby(rig);
+    const creator = rig.clients[0];
+    if (!creator) throw new Error('no creator client');
+    expect(await invite(creator, 'friend@example')).toEqual({ error: 'INVALID_EMAIL' });
+    expect(sendImpl).not.toHaveBeenCalled();
+  }, 15000);
+
+  it('enforces the per-seat lobby budget over the real gateway', async () => {
+    const sendImpl = vi.fn(async () => {});
+    const rig = await freshRig(undefined, {
+      invites: {
+        baseUrl: 'https://werewolf.example',
+        from: 'a@b.c',
+        sendImpl,
+        maxInvitesPerLobby: 1,
+      },
+    });
+    await openLobby(rig);
+    const creator = rig.clients[0];
+    if (!creator) throw new Error('no creator client');
+    expect(await invite(creator, 'a@example.com')).toEqual({ ok: true });
+    expect(await invite(creator, 'b@example.com')).toEqual({ error: 'INVITE_RATE_LIMITED' });
+    expect(sendImpl).toHaveBeenCalledTimes(1);
+  }, 15000);
+});
