@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 import { SELECTORS } from './labels';
 
@@ -25,4 +25,27 @@ export async function revealFates(page: Page): Promise<Map<number, Fate>> {
 /** The public day log's full text, as rendered on the game-over screen. */
 export async function dayLogText(page: Page): Promise<string> {
   return (await page.locator('[aria-label="对局记录"]').textContent()) ?? '';
+}
+
+/**
+ * The 复盘 section on the game-over screen: the deterministic stats grid is
+ * always rendered — one row per seat, the whole table's shared numbers —
+ * and the 生成复盘 click settles the AI block. Where no assistant provider is
+ * configured (local/CI e2e) that is the 未配置 state; on a hosted run the
+ * click arms the real generation and the section fills with the review, so
+ * the wait is generous there. Both are legitimate settled states; an error
+ * or a timeout is a real failure.
+ */
+export async function expectPostgameSection(page: Page): Promise<void> {
+  await expect(page.locator(SELECTORS.postgameSection)).toBeVisible();
+  const grid = page.locator(SELECTORS.postgameGrid);
+  await expect(grid).toBeVisible();
+  await expect(grid.locator('tbody tr')).toHaveCount(12);
+  await page.locator(SELECTORS.postgameAskButton).click();
+  const settled = page
+    .locator(SELECTORS.postgameReview)
+    .or(page.locator(SELECTORS.postgameUnconfigured));
+  await expect(settled.first()).toBeVisible({
+    timeout: process.env.WEREWOLF_BASE_URL ? 300_000 : 15_000,
+  });
 }

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { playScriptedGame } from './harness/driver';
 import { wolfWinPlan } from './harness/plans';
-import { dayLogText, revealFates } from './harness/reveal';
+import { dayLogText, expectPostgameSection, revealFates } from './harness/reveal';
 import { openTable, anchorPage } from './harness/table';
 
 /** Evidence directory for game-over screenshots (CI artifact / QA upload). */
@@ -34,6 +34,10 @@ test('scenario A: 12 seats play a full game to a wolf win — 屠边 via the vil
     expect(announced, 'night deaths announced in the public log').toBeGreaterThanOrEqual(3);
     expect(log).not.toContain('被放逐出局');
     expect(log).not.toContain('猎人开枪');
+
+    // The 复盘 section rode the same reveal: the shared stats grid renders,
+    // and with no assistant provider the 生成复盘 click lands on 未配置.
+    await expectPostgameSection(anchorPage(table));
   } finally {
     await table.close();
   }

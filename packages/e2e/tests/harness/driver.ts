@@ -56,11 +56,16 @@ export async function playScriptedGame(
   plan: PlayPlan,
   opts: PlayOptions = {},
 ): Promise<'wolves' | 'good'> {
-  const budgetMs = opts.budgetMs ?? (process.env.WEREWOLF_BASE_URL ? 840_000 : 240_000);
-  const deadline = Date.now() + budgetMs;
+  const budgetMs = opts.budgetMs ?? (process.env.WEREWOLF_BASE_URL ? 840_000 : 360_000);
+  // Monotonic clock: wall time (Date.now) jumps across host suspend/resume and
+  // false-fires the watchdog; hrtime freezes with the suspended process, like
+  // every other timer in the stack.
+  const elapsedMs = () => Number(process.hrtime.bigint() / 1_000_000n);
+  const startedMs = elapsedMs();
+  const deadline = startedMs + budgetMs;
   const acted = new Set<string>();
 
-  while (Date.now() < deadline) {
+  while (elapsedMs() < deadline) {
     const winner = await readWinner(table.seats[0]?.page ?? null);
     if (winner !== null) {
       await expectReveal(table);
