@@ -15,7 +15,7 @@
     "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
-    "@types/node": "^24.19.1",
+    "@types/node": "^26.6.4",
     "@werewolf/engine": "*",
     "@werewolf/server": "*",
     "tsx": "^4.23.15",
