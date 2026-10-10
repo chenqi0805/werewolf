@@ -15,7 +15,9 @@ export type RoomErrorCode =
   | 'ROOM_NOT_FULL'
   | 'ALREADY_STARTED'
   | 'NOT_A_BOT'
-  | 'INVALID_BOARD';
+  | 'INVALID_BOARD'
+  | 'RATE_LIMITED'
+  | 'ROOM_LIMIT';
 
 export class RoomError extends Error {
   constructor(

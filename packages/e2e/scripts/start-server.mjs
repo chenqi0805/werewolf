@@ -42,6 +42,20 @@ const child = spawn('npm', ['run', 'start', '-w', '@werewolf/server'], {
         'badge-pass': 3000,
       }),
     WEREWOLF_WEB_DIST: path.resolve(root, 'packages/web/dist'),
+    // Relaxed room-API bounds (WEREWOLF_LIMITS): the six-scenario suite
+    // creates ~6 rooms and seats them with 12 joins each, all from one
+    // 127.0.0.1 IP — far over the default per-IP create/join budgets. The
+    // test server must never rate-limit itself; the wide TTL keeps no
+    // scenario's room from aging out mid-run.
+    WEREWOLF_LIMITS:
+      process.env.WEREWOLF_E2E_LIMITS ??
+      JSON.stringify({
+        createPerWindow: 1000,
+        joinPerWindow: 1000,
+        windowMs: 600000,
+        maxLiveRooms: 1000,
+        emptyLobbyTtlMs: 3600000,
+      }),
     // The e2e suite asserts the lobby's invite affordance is hidden, so the
     // boot is pinned provider-free regardless of the invoking shell's env
     // (parseInviteEnv: an empty key reads as unconfigured).

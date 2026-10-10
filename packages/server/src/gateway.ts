@@ -3,6 +3,7 @@ import { Server, type Socket } from 'socket.io';
 import type { BoardId, GameEvent, PlayerAction, Seat } from '@werewolf/engine';
 import { BOARDS, GameError } from '@werewolf/engine';
 import { RoomError } from './errors';
+import { DEFAULT_LIMITS, IpWindowLimiter, type LimitOverrides, type Limits } from './limits';
 import { BotManager } from './bots';
 import type { BotStrategy } from '@werewolf/bots';
 import { RoomRegistry, type Room } from './room';
@@ -135,6 +136,12 @@ export interface GatewayOptions {
   /** Phase clock overrides in ms, keyed by clockKey — tests shrink these. */
   timers?: TimerOverrides;
   /**
+   * Room-API bounds (audit F2): per-IP attempt buckets for room:create and
+   * room:join, the global live-lobby ceiling, and the empty-lobby TTL.
+   * Partial — omitted keys keep DEFAULT_LIMITS.
+   */
+  limits?: LimitOverrides;
+  /**
    * Voice relay + server-side STT fallback. Unset = relay only: frames still
    * fan out to the room, but slots without a client transcript pass silently
    * (no buffering, no OpenAI call).
@@ -178,8 +185,17 @@ export function attachGateway(
   voiceHub: VoiceHub;
 } {
   const timers: Record<string, number> = { ...DEFAULT_TIMERS, ...opts?.timers };
+  const limits: Limits = { ...DEFAULT_LIMITS, ...opts?.limits };
+  // Per-IP attempt buckets for the two unauthenticated room events. The key
+  // is the Socket.IO handshake address — behind no proxy that is the client's
+  // address, and no X-Forwarded-For trust is added (a spoofable input would
+  // defeat the limiter it feeds).
+  const createLimiter = new IpWindowLimiter(limits.createPerWindow, limits.windowMs);
+  const joinLimiter = new IpWindowLimiter(limits.joinPerWindow, limits.windowMs);
   const roomSockets = new Map<string, Set<GatewaySocket>>();
   const roomTimers = new Map<string, NodeJS.Timeout>();
+  /** Pending empty-lobby evictions, keyed by room code. */
+  const evictTimers = new Map<string, NodeJS.Timeout>();
   /** The step deadline currently advertised to joining/rejoining sockets. */
   const deadlines = new Map<string, TimerInfo>();
   const voiceHub = new VoiceHub(
@@ -209,6 +225,8 @@ export function attachGateway(
       roomSockets.set(roomCode, set);
     }
     set.add(socket);
+    // Occupancy returned: a pending empty-lobby eviction is cancelled.
+    if (set.size === 1) cancelEvict(roomCode);
   }
 
   function unbind(socket: GatewaySocket): void {
@@ -219,7 +237,52 @@ export function attachGateway(
     const set = roomSockets.get(code);
     if (!set) return;
     set.delete(socket);
-    if (set.size === 0) roomSockets.delete(code);
+    if (set.size === 0) {
+      roomSockets.delete(code);
+      // Last socket left: the room ages out unless someone returns.
+      scheduleEvict(code);
+    }
+  }
+
+  /** Rooms with at least one connected socket — the live-lobby census. */
+  function liveRoomCount(): number {
+    let live = 0;
+    for (const set of roomSockets.values()) {
+      if (set.size > 0) live += 1;
+    }
+    return live;
+  }
+
+  /**
+   * The empty-lobby TTL (audit F2): drop the room entirely, releasing its
+   * code and any invite headroom it armed (an evicted room answers
+   * NOT_IN_ROOM, so it can spend nothing further). Clears the room's phase
+   * clock bookkeeping — a dead room has no one left to tick for.
+   */
+  function evictRoom(code: string): void {
+    evictTimers.delete(code);
+    const timer = roomTimers.get(code);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      roomTimers.delete(code);
+    }
+    deadlines.delete(code);
+    registry.remove(code);
+  }
+
+  /** Occupancy fell to zero — arm the TTL (an occupant return cancels it). */
+  function scheduleEvict(code: string): void {
+    cancelEvict(code);
+    const timer = setTimeout(() => evictRoom(code), limits.emptyLobbyTtlMs);
+    evictTimers.set(code, timer);
+  }
+
+  /** Occupancy returned — cancel a pending empty-lobby eviction. */
+  function cancelEvict(code: string): void {
+    const timer = evictTimers.get(code);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    evictTimers.delete(code);
   }
 
   function errorPayload(error: unknown): ErrorPayload {
@@ -227,6 +290,11 @@ export function attachGateway(
       return { code: error.code, message: error.message };
     }
     return { code: 'INTERNAL', message: error instanceof Error ? error.message : String(error) };
+  }
+
+  /** Per-IP limiter key: the Socket.IO handshake address. */
+  function ipOf(socket: GatewaySocket): string {
+    return socket.handshake.address;
   }
 
   function emitView(socket: GatewaySocket, room: Room, seat: Seat | null): void {
@@ -323,6 +391,9 @@ export function attachGateway(
    * longer matches the replayed state) falls back to a fresh full clock.
    */
   function rearmRestored(room: Room, timer: TimerRowRaw | null): void {
+    // A restored room boots with nobody connected: it ages out on the TTL
+    // unless a client (or its bot runner) reattaches — bind cancels it.
+    scheduleEvict(room.code);
     const key = clockKey(room.state);
     if (key === null) return;
     if (timer !== null && timer.timerKey === key) {
@@ -406,6 +477,12 @@ export function attachGateway(
   io.on('connection', (socket) => {
     socket.on('room:create', (payload, ack) => {
       if (typeof ack !== 'function') return;
+      // The attempt budget is spent first, whatever the payload — a flood of
+      // any shape is the resource F2 bounds (RATE_LIMITED, a stable code).
+      if (!createLimiter.allow(ipOf(socket))) {
+        ack({ error: 'RATE_LIMITED' });
+        return;
+      }
       // The board is creation-time data: it picks the dealt deck and the
       // frozen config. Absent reads as classic (v1 clients); anything else
       // that is not a registry id is rejected before a room is minted.
@@ -419,6 +496,12 @@ export function attachGateway(
         (typeof requested !== 'string' || !Object.hasOwn(BOARDS, requested))
       ) {
         ack({ error: 'INVALID_BOARD' });
+        return;
+      }
+      // Global live-lobby ceiling: reject before minting, so a rejected
+      // create leaves no room and no reserved code behind.
+      if (liveRoomCount() >= limits.maxLiveRooms) {
+        ack({ error: 'ROOM_LIMIT' });
         return;
       }
       try {
@@ -444,6 +527,13 @@ export function attachGateway(
       if (typeof ack !== 'function') return;
       const [code, rawName] = args;
       if (typeof code !== 'string') return;
+      // The limiter fires before the lookup: failed probes spend the same
+      // budget as real joins, which is what deflates the room-existence
+      // oracle (F9) to noise.
+      if (!joinLimiter.allow(ipOf(socket))) {
+        ack({ error: 'RATE_LIMITED' });
+        return;
+      }
       const room = registry.get(code);
       if (!room) {
         ack({ error: 'ROOM_NOT_FOUND' });
@@ -632,6 +722,8 @@ export function attachGateway(
     dispose: () => {
       for (const timer of roomTimers.values()) clearTimeout(timer);
       roomTimers.clear();
+      for (const timer of evictTimers.values()) clearTimeout(timer);
+      evictTimers.clear();
       deadlines.clear();
       voiceHub.dropAll();
     },

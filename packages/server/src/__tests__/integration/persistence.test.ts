@@ -417,7 +417,13 @@ describe('persistence — SQLite event store', () => {
     const created = await createRoom(c.client);
     await stopServer(rig);
 
-    const rig2 = await startServer(scriptTimers(), { dbPath });
+    const rig2 = await startServer(scriptTimers(), {
+      dbPath,
+      // The mint-sweep below creates 300 rooms from one loopback IP — far
+      // over the F2 per-IP create budget. The test asserts code reservation,
+      // not throttling, so its server opts out through the same seam.
+      limits: { createPerWindow: 1000, joinPerWindow: 1000 },
+    });
     expect(rig2.app.registry.get(created.roomCode)).toBeDefined();
     const c2 = await connectTo(rig2.port);
     const codes = new Set<string>();
@@ -449,8 +455,14 @@ describe('persistence — SQLite event store', () => {
     );
     db.close();
 
-    // The boot itself must survive both corruptions.
-    const rig2 = await startServer(scriptTimers(), { dbPath });
+    // The boot itself must survive both corruptions. The mint-sweep below
+    // creates 100 rooms from one loopback IP — over the F2 per-IP create
+    // budget — and this test asserts quarantine, not throttling, so the
+    // server opts out through the same seam.
+    const rig2 = await startServer(scriptTimers(), {
+      dbPath,
+      limits: { createPerWindow: 1000, joinPerWindow: 1000 },
+    });
     expect(rig2.app.registry.get(c.code), 'healthy room restored').toBeDefined();
     expect(rig2.app.registry.get(a.code), 'corrupt-assignments room quarantined').toBeUndefined();
     expect(rig2.app.registry.get(b.roomCode), 'corrupt-action room quarantined').toBeUndefined();

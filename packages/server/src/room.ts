@@ -382,6 +382,17 @@ export class RoomRegistry {
     return this.rooms.get(code);
   }
 
+  /**
+   * Eviction (the empty-lobby TTL): drop the room and retire its code. The
+   * code is reserved even when no store is attached — with one attached, the
+   * evicted room's rows persist on disk, and a re-minted code would collide
+   * with them on the next restore.
+   */
+  remove(code: string): void {
+    this.rooms.delete(code);
+    this.reservedCodes.add(code);
+  }
+
   /** Adopt a fully replayed room (persistence restore path). */
   restore(room: Room): void {
     this.rooms.set(room.code, room);
