@@ -323,6 +323,9 @@ export function validatePostgameReply(value: unknown): PostgameReply | null {
     if (typeof highlight !== 'string' || highlight.trim().length === 0) return null;
     clean.push({ seat: seatNumber, score, rationale, highlight });
   }
+  // The contract is every seat rated exactly once: a provider that omits
+  // seats must burn the correction retry, not render a partial 评分 table.
+  if (seen.size !== SEAT_COUNT) return null;
   return { summary, keyMoments, mvp: mvpSeat, ratings: clean };
 }
 

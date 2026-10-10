@@ -192,6 +192,13 @@ describe('validatePostgameReply', () => {
     ).toBeNull();
   });
 
+  it('rejects partial seat coverage — the contract is every seat rated once', () => {
+    // Shape-valid but rating only 11 of the 12 seats: the provider reply
+    // must burn the correction retry, not render a partial 评分 table.
+    expect(validatePostgameReply({ ...VALID, ratings: VALID.ratings.slice(0, 11) })).toBeNull();
+    expect(validatePostgameReply({ ...VALID, ratings: VALID.ratings.slice(0, 1) })).toBeNull();
+  });
+
   it('rejects blank or missing prose', () => {
     expect(validatePostgameReply({ ...VALID, summary: '  ' })).toBeNull();
     expect(validatePostgameReply({ ...VALID, keyMoments: [] })).toBeNull();
