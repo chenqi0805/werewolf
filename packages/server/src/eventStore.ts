@@ -47,6 +47,8 @@ export interface ActionRowRaw {
 export interface SeatRowRaw {
   seat: number;
   tokenHash: string;
+  /** Display name chosen at join; '' = none. Written by every seat rewrite. */
+  name: string;
   kind: string;
 }
 
@@ -79,6 +81,7 @@ CREATE TABLE IF NOT EXISTS room_seats (
   seat       INTEGER NOT NULL,
   token_hash TEXT NOT NULL,
   kind       TEXT NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (code, seat)
 );
 CREATE TABLE IF NOT EXISTS room_timers (
@@ -103,6 +106,21 @@ export class EventStore {
     this.db.pragma('synchronous = NORMAL');
     this.db.pragma('foreign_keys = ON');
     this.db.exec(SCHEMA);
+    this.migrateRoomSeats();
+  }
+
+  /**
+   * Databases written before display names lack the `name` column — and
+   * CREATE TABLE IF NOT EXISTS never amends an existing table. Old rows
+   * read as no name (the seat-label fallback), matching in-memory v2.1.
+   */
+  private migrateRoomSeats(): void {
+    const columns = this.db.prepare(`PRAGMA table_info(room_seats)`).all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((c) => c.name === 'name')) {
+      this.db.exec(`ALTER TABLE room_seats ADD COLUMN name TEXT NOT NULL DEFAULT ''`);
+    }
   }
 
   /** Inserts or refreshes the room row (create, and restore re-attach). */
@@ -146,17 +164,19 @@ export class EventStore {
     touch();
   }
 
-  /** Rewrites the room's seat rows — join is the only seat mutation. */
+  /** Rewrites the room's seat rows — join and leave are the seat mutations. */
   replaceSeats(
     code: string,
-    seats: ReadonlyArray<{ seat: number; tokenHash: string; kind: SeatKind }>,
+    seats: ReadonlyArray<{ seat: number; tokenHash: string; name: string; kind: SeatKind }>,
   ): void {
     const write = this.db.transaction(() => {
       this.db.prepare(`DELETE FROM room_seats WHERE code = ?`).run(code);
-      for (const { seat, tokenHash, kind } of seats) {
+      for (const { seat, tokenHash, name, kind } of seats) {
         this.db
-          .prepare(`INSERT INTO room_seats (code, seat, token_hash, kind) VALUES (?, ?, ?, ?)`)
-          .run(code, seat, tokenHash, kind);
+          .prepare(
+            `INSERT INTO room_seats (code, seat, token_hash, kind, name) VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(code, seat, tokenHash, kind, name);
       }
     });
     write();
@@ -223,16 +243,17 @@ export class EventStore {
       }));
   }
 
-  /** The room's seated tokens (hashed), lowest seat first. */
+  /** The room's seated tokens (hashed) and display names, lowest seat first. */
   loadSeatRows(code: string): SeatRowRaw[] {
     return this.db
-      .prepare(`SELECT seat, token_hash, kind FROM room_seats WHERE code = ? ORDER BY seat`)
+      .prepare(`SELECT seat, token_hash, kind, name FROM room_seats WHERE code = ? ORDER BY seat`)
       .all(code)
       .map((row) => row as Record<string, unknown>)
       .map((row) => ({
         seat: row.seat as number,
         tokenHash: row.token_hash as string,
         kind: row.kind as string,
+        name: row.name as string,
       }));
   }
 

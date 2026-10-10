@@ -25,6 +25,20 @@ import {
 /** Freeform speech longer than this is rejected as a bad action. */
 const MAX_SPEECH_LENGTH = 2000;
 
+/**
+ * Display names are capped, never rejected — the same trim-and-cap shape as
+ * MAX_SPEECH_LENGTH, but a name never blocks entry. Counted in code points
+ * so CJK glyphs and emoji each count once, not per UTF-16 surrogate.
+ */
+const MAX_NAME_LENGTH = 12;
+
+function normalizeName(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  const chars = [...trimmed];
+  return chars.length > MAX_NAME_LENGTH ? chars.slice(0, MAX_NAME_LENGTH).join('') : trimmed;
+}
+
 export type Ack<T> = (resp: T | { error: string }) => void;
 
 export interface CreateAck {
@@ -33,12 +47,16 @@ export interface CreateAck {
   sessionToken: string;
   /** The dealt board — echoed so the creator's UI can name the game. */
   board: BoardId;
+  /** The stored display name — trimmed and capped server-side, so the echo is what stuck. */
+  name: string;
 }
 
 export type JoinAck = CreateAck | { roomCode: string; spectator: true };
 
 export interface RejoinAck {
   seat: Seat;
+  /** The display name stored for this seat — '' when none was chosen. */
+  name: string;
 }
 
 export interface OkAck {
@@ -68,8 +86,11 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
-  'room:create': (payload: { board?: BoardId } | undefined, ack: Ack<CreateAck>) => void;
-  'room:join': (code: string, ack: Ack<JoinAck>) => void;
+  'room:create': (
+    payload: { board?: BoardId; name?: string } | undefined,
+    ack: Ack<CreateAck>,
+  ) => void;
+  'room:join': (code: string, name: string | undefined, ack: Ack<JoinAck>) => void;
   'room:rejoin': (code: string, token: string, ack: Ack<RejoinAck>) => void;
   'room:start': (ack: Ack<OkAck>) => void;
   /** Lobby-only quit: frees the seat and kills the session token. */
@@ -207,6 +228,7 @@ export function attachGateway(
         room.occupiedSeats(),
         room.botSeats(),
         invitesAvailable,
+        room.seatNames(),
       ),
     );
   }
@@ -364,21 +386,29 @@ export function attachGateway(
       // The board is creation-time data: it picks the dealt deck and the
       // frozen config. Absent reads as classic (v1 clients); anything else
       // that is not a registry id is rejected before a room is minted.
-      const requested = (payload as { board?: unknown } | undefined)?.board;
+      const wire = (payload ?? {}) as { board?: unknown; name?: unknown };
+      const requested = wire.board;
       if (requested !== undefined && (typeof requested !== 'string' || !(requested in BOARDS))) {
         ack({ error: 'INVALID_BOARD' });
         return;
       }
       const board = (requested as BoardId | undefined) ?? 'classic';
+      const name = normalizeName(wire.name);
       const room = registry.create(board);
-      const { seat, sessionToken } = room.join();
+      const { seat, sessionToken } = room.join(name);
       bind(socket, room.code, seat);
-      ack({ roomCode: room.code, seat, sessionToken, board });
+      ack({ roomCode: room.code, seat, sessionToken, board, name });
       broadcastOccupancy(room);
     });
 
-    socket.on('room:join', (code, ack) => {
-      if (typeof ack !== 'function' || typeof code !== 'string') return;
+    socket.on('room:join', (...args: [string, string | undefined, Ack<JoinAck>]) => {
+      // The ack is always the last argument: v2 clients emit (code, name, ack),
+      // pre-name clients (code, ack). Accepting both arities keeps a stale tab
+      // joining across a server upgrade — the never-hang contract.
+      const ack = args.at(-1);
+      if (typeof ack !== 'function') return;
+      const [code, rawName] = args;
+      if (typeof code !== 'string') return;
       const room = registry.get(code);
       if (!room) {
         ack({ error: 'ROOM_NOT_FOUND' });
@@ -392,9 +422,10 @@ export function attachGateway(
         return;
       }
       try {
-        const { seat, sessionToken } = room.join();
+        const name = normalizeName(rawName);
+        const { seat, sessionToken } = room.join(name);
         bind(socket, room.code, seat);
-        ack({ roomCode: room.code, seat, sessionToken, board: room.boardId });
+        ack({ roomCode: room.code, seat, sessionToken, board: room.boardId, name });
         broadcastOccupancy(room);
       } catch (error) {
         ack({ error: errorPayload(error).code });
@@ -413,7 +444,7 @@ export function attachGateway(
       try {
         const seat = room.reattach(token);
         bind(socket, room.code, seat);
-        ack({ seat });
+        ack({ seat, name: room.seatName(seat) });
         // The view carries the seat's full visible log — the backlog.
         emitView(socket, room, seat);
       } catch (error) {

@@ -16,7 +16,7 @@ import type {
   TimerRowRaw,
 } from './eventStore';
 import type { ActionSource, Room, RoomHooks, RoomRegistry } from './room';
-import { Room as RoomImpl } from './room';
+import { Room as RoomImpl, type SeatIdentity } from './room';
 
 /**
  * The bridge between rooms and the EventStore — the write hooks a live room
@@ -66,7 +66,7 @@ export function storeHooksFor(store: EventStore): (code: string) => RoomHooks {
     onSeatsChanged: (room) =>
       store.replaceSeats(
         room.code,
-        room.seatTokenHashes().map((s) => ({
+        room.seatRows().map((s) => ({
           ...s,
           kind: room.isBotSeat(s.seat) ? ('bot' as SeatKind) : ('human' as SeatKind),
         })),
@@ -130,7 +130,9 @@ export function restoreRooms(
       const actions = store.loadActionRows(row.code);
       const seatRows = store.loadSeatRows(row.code);
       const state = replayRoom(row, actions);
-      const seats = new Map<Seat, string>(seatRows.map((s) => [s.seat, s.tokenHash]));
+      const seats = new Map<Seat, SeatIdentity>(
+        seatRows.map((s) => [s.seat, { tokenHash: s.tokenHash, name: s.name }]),
+      );
       const bots = new Set(seatRows.filter((s) => s.kind === 'bot').map((s) => s.seat));
       const room = new RoomImpl({
         code: row.code,

@@ -128,18 +128,23 @@ export async function waitFor(pred: () => boolean, timeoutMs = 5000): Promise<vo
   }
 }
 
-export async function createRoom(socket: Client, board?: BoardId): Promise<CreateAck> {
+export async function createRoom(
+  socket: Client,
+  board?: BoardId,
+  /** Display name chosen at the door; the server trims and caps it. */
+  name?: string,
+): Promise<CreateAck> {
   return new Promise((resolve, reject) => {
-    socket.emit('room:create', board ? { board } : undefined, (resp) => {
+    socket.emit('room:create', { board, name }, (resp) => {
       if ('error' in resp) reject(new Error(resp.error));
       else resolve(resp);
     });
   });
 }
 
-export async function joinRoom(socket: Client, code: string): Promise<JoinAck> {
+export async function joinRoom(socket: Client, code: string, name?: string): Promise<JoinAck> {
   return new Promise((resolve, reject) => {
-    socket.emit('room:join', code, (resp) => {
+    socket.emit('room:join', code, name ?? '', (resp) => {
       if ('error' in resp) reject(new Error(resp.error));
       else resolve(resp);
     });

@@ -43,6 +43,7 @@ const view = (overrides: Partial<PlayerView> = {}): PlayerView => ({
 
 const row = (seat: number, overrides: Partial<PlayerView['players'][number]> = {}) => ({
   seat,
+  name: '',
   alive: true,
   hasBadge: false,
   revealedIdiot: false,

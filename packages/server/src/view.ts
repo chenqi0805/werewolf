@@ -13,6 +13,8 @@ import { campOf, canVote, SEAT_COUNT, visibilityOf, voteWeight } from '@werewolf
 
 export interface PlayerRow {
   seat: Seat;
+  /** The display name chosen at the door; '' falls back to the seat label. */
+  name: string;
   alive: boolean;
   hasBadge: boolean;
   /** Public the moment the idiot flips — mirrors the IDIOT_REVEALED event. */
@@ -231,6 +233,8 @@ export function viewFor(
   bots?: ReadonlyMap<Seat, string>,
   /** Invite capability hint from the gateway's boot-resolved sender. */
   inviteAvailable?: boolean,
+  /** seat → display name chosen at the door; unset reads as none. */
+  names?: ReadonlyMap<Seat, string>,
 ): PlayerView {
   const over = state.phase === 'game-over';
   const viewer = seat === null ? null : (state.players[seat] ?? null);
@@ -262,6 +266,7 @@ export function viewFor(
     else if (started && seesWolfPack && wolves.has(p.seat)) role = p.role;
     players.push({
       seat: p.seat,
+      name: names?.get(p.seat) ?? '',
       alive: p.alive,
       hasBadge: p.hasBadge,
       revealedIdiot: p.revealedIdiot,

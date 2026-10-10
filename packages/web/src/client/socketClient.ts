@@ -50,12 +50,17 @@ function callAck<T>(emit: (ack: (resp: AckOf<T>) => void) => void): Promise<T> {
   });
 }
 
-export function createRoom(socket: GameSocket, board: BoardId = 'classic'): Promise<CreateAck> {
-  return callAck<CreateAck>((ack) => socket.emit('room:create', { board }, ack));
+export function createRoom(
+  socket: GameSocket,
+  board: BoardId = 'classic',
+  /** Display name chosen at the door; the server trims and caps it. */
+  name = '',
+): Promise<CreateAck> {
+  return callAck<CreateAck>((ack) => socket.emit('room:create', { board, name }, ack));
 }
 
-export function joinRoom(socket: GameSocket, code: string): Promise<JoinAck> {
-  return callAck<JoinAck>((ack) => socket.emit('room:join', code, ack));
+export function joinRoom(socket: GameSocket, code: string, name = ''): Promise<JoinAck> {
+  return callAck<JoinAck>((ack) => socket.emit('room:join', code, name, ack));
 }
 
 export function rejoinRoom(socket: GameSocket, code: string, token: string): Promise<RejoinAck> {

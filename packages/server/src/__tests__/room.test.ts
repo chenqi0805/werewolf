@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Role, Seat } from '@werewolf/engine';
 import { RoomError } from '../errors';
-import type { Room } from '../room';
+import { hashToken } from '../ids';
+import { Room, type SeatIdentity } from '../room';
 import { viewFor } from '../view';
 import { ALL_SEATS, fixedRoom } from './fixtures';
 import * as drv from './drivers';
@@ -115,6 +116,58 @@ describe('Room lifecycle', () => {
     room.join();
     expect(room.reattach(sessionToken)).toBe(seat);
     expect(() => room.reattach('forged-token')).toThrowError(/BAD_TOKEN|No seat/);
+  });
+});
+
+describe('seat display names', () => {
+  it('stores the name chosen at the door and reads it back per seat', () => {
+    const room = fixedRoom();
+    const a = room.join('阿明');
+    const b = room.join('小美');
+    room.join();
+    expect(room.seatName(a.seat)).toBe('阿明');
+    expect(room.seatName(b.seat)).toBe('小美');
+    expect(room.seatNames()).toEqual(
+      new Map<Seat, string>([
+        [a.seat, '阿明'],
+        [b.seat, '小美'],
+      ]),
+    );
+  });
+
+  it('defaults to no name — the seat-label fallback', () => {
+    const room = fixedRoom();
+    const a = room.join();
+    expect(room.seatName(a.seat)).toBe('');
+    expect(room.seatNames().size).toBe(0);
+  });
+
+  it('frees the name with the seat on leave', () => {
+    const room = fixedRoom();
+    const a = room.join('阿明');
+    room.leave(a.seat);
+    const next = room.join();
+    expect(next.seat).toBe(a.seat); // the seat is reused…
+    expect(room.seatName(next.seat)).toBe(''); // …but the old name is not.
+  });
+
+  it('restores names with the seat records across a restore', () => {
+    const source = fixedRoom();
+    const a = source.join('阿明');
+    const restored = new Room({
+      code: source.code,
+      restored: {
+        state: source.state,
+        seats: new Map<Seat, SeatIdentity>([
+          [a.seat, { tokenHash: hashToken(a.sessionToken), name: '阿明' }],
+          [2, { tokenHash: hashToken('other-raw'), name: '小美' }],
+        ]),
+      },
+    });
+    expect(restored.seatName(a.seat)).toBe('阿明');
+    expect(restored.seatName(2)).toBe('小美');
+    // The token path is unchanged by the shape change.
+    expect(restored.reattach(a.sessionToken)).toBe(a.seat);
   });
 });
 
