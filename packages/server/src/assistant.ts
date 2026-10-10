@@ -36,9 +36,20 @@ const providerAgent = new Agent({
 });
 // The lambda is structurally compatible with global fetch but its init
 // carries the undici-only `dispatcher` field, so one cast keeps
-// `fetchImpl: typeof fetch` honest.
-export const defaultProviderFetch = ((input: RequestInfo, init?: RequestInit) =>
-  fetch(input, { ...init, dispatcher: providerAgent } as RequestInit)) as unknown as typeof fetch;
+// `fetchImpl: typeof fetch` honest. Parameter types come from the global
+// fetch itself — the server has no DOM lib, so RequestInfo does not exist
+// here.
+export const defaultProviderFetch = (async (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+) => {
+  // Node's fetch reads the undici `dispatcher` option at runtime even though
+  // the type doesn't declare it — hence the intersection cast.
+  const providerInit = { ...init, dispatcher: providerAgent } as Parameters<typeof fetch>[1] & {
+    dispatcher: Agent;
+  };
+  return fetch(input, providerInit);
+}) as unknown as typeof fetch;
 
 export interface StrategyReply {
   /** 可照念的发言要点 — first-person, spoken-style zh. */
