@@ -26,6 +26,8 @@ import {
   type Recorder,
   type Rig,
 } from './helpers';
+import { EventStore, RoomRegistry, restoreRooms, storeHooksFor, viewFor } from '../../index';
+import { ALL_SEATS } from '../fixtures';
 
 /**
  * Persistence: rooms, seat tokens, speech log, per-seat votes, and the
@@ -711,4 +713,136 @@ describe('persistence — SQLite event store', () => {
     expect(rowsAfter.slice(0, rowsBefore.length)).toEqual(rowsBefore);
     await stopServer(rig2);
   }, 40_000);
+
+  it('rolls back room memory when an append fails mid-game (SRV-4)', async () => {
+    dbPath = resolve(tmpdir(), `werewolf-persist-${randomUUID()}.db`);
+    const store = new EventStore(dbPath);
+    // The server's exact hook wiring, with the append failing on demand —
+    // the simulated store-write failure the RoomHooks contract plans for.
+    let failNextAppend = false;
+    const baseHooks = storeHooksFor(store);
+    const registry = new RoomRegistry((code) => {
+      const base = baseHooks(code);
+      return {
+        ...base,
+        onAction: (room, action, source) => {
+          if (failNextAppend) throw new Error('disk full (simulated store failure)');
+          base.onAction?.(room, action, source);
+        },
+      };
+    });
+
+    const room = registry.create('classic');
+    for (let i = 0; i < 12; i++) room.join();
+    room.start();
+    const wolves = Object.values(room.state.players)
+      .filter((p) => p.alive && p.role === 'werewolf')
+      .map((p) => p.seat)
+      .sort((a, b) => a - b);
+    const prey = Object.values(room.state.players).find((p) => p.role !== 'werewolf')?.seat;
+    const firstWolf = wolves[0];
+    const secondWolf = wolves[1];
+    if (prey === undefined || firstWolf === undefined || secondWolf === undefined) {
+      throw new Error('dealt deck must have wolves and prey');
+    }
+
+    // Mid-game point: the first wolf's knife is recorded, the second
+    // wolf's ballot is where the append will fail.
+    room.applyPlayerAction({ type: 'WOLF_KILL', actor: firstWolf, target: prey });
+    const before = JSON.stringify(room.state);
+    const viewsBefore = ALL_SEATS.map((s) => JSON.stringify(viewFor(room.state, s)));
+
+    failNextAppend = true;
+    expect(() =>
+      room.applyPlayerAction({ type: 'WOLF_KILL', actor: secondWolf, target: prey }),
+    ).toThrow('disk full (simulated store failure)');
+
+    // The failed append is an error to the caller, and the room's memory is
+    // byte-identical to before — the state and every seat's fog-of-war view.
+    expect(JSON.stringify(room.state)).toBe(before);
+    ALL_SEATS.forEach((seat, i) => {
+      expect(JSON.stringify(viewFor(room.state, seat))).toBe(viewsBefore[i]);
+    });
+
+    // Recovery: the retried action appends at MAX(seq)+1 — the failed one
+    // consumed nothing, the stream has no hole.
+    failNextAppend = false;
+    room.applyPlayerAction({ type: 'WOLF_KILL', actor: secondWolf, target: prey });
+    const rows = store.loadActionRows(room.code);
+    expect(rows.map((r) => r.seq)).toEqual(rows.map((_, i) => i + 1));
+    const last = rows[rows.length - 1];
+    expect(last && (JSON.parse(last.actionJson) as { type: string }).type).toBe('WOLF_KILL');
+
+    // Restart replay over the same file: the live state reproduces exactly,
+    // and the failed append left no hole and no quarantine verdict.
+    const replayRegistry = new RoomRegistry(storeHooksFor(store));
+    const summary = restoreRooms(store, replayRegistry);
+    expect(summary.quarantined).toEqual([]);
+    const restored = replayRegistry.get(room.code);
+    expect(restored).toBeDefined();
+    expect(JSON.stringify(restored!.state)).toBe(JSON.stringify(room.state));
+
+    const audit = new Database(dbPath, { readonly: true });
+    const mark = audit
+      .prepare('SELECT quarantined_at FROM rooms WHERE code = ?')
+      .get(room.code) as {
+      quarantined_at: number | null;
+    };
+    audit.close();
+    expect(mark.quarantined_at).toBeNull();
+    store.close();
+  });
+
+  it('quarantines replay failures only — a re-arm failure leaves the room served (SRV-9)', async () => {
+    dbPath = resolve(tmpdir(), `werewolf-persist-${randomUUID()}.db`);
+    const store = new EventStore(dbPath);
+    const registry = new RoomRegistry(storeHooksFor(store));
+
+    // Room A: started, with a live clock row to re-arm from.
+    const roomA = registry.create('classic');
+    for (let i = 0; i < 12; i++) roomA.join();
+    roomA.start();
+    store.upsertTimer(roomA.code, 'night:wolf', Date.now() + 30_000);
+    const codeA = roomA.code;
+    // Room B: a lobby room whose stored row will not replay.
+    const roomB = registry.create('classic');
+    roomB.join();
+    const codeB = roomB.code;
+    store.close();
+
+    const corrupt = new Database(dbPath);
+    corrupt.prepare(`UPDATE rooms SET assignments = '{"seat":' WHERE code = ?`).run(codeB);
+    corrupt.close();
+
+    // The boot: A's clock re-arm throws; B's replay throws.
+    const store2 = new EventStore(dbPath);
+    const registry2 = new RoomRegistry(storeHooksFor(store2));
+    const rearmCalls: { code: string; timerKey: string | null }[] = [];
+    const summary = restoreRooms(store2, registry2, (room, timer) => {
+      rearmCalls.push({ code: room.code, timerKey: timer?.timerKey ?? null });
+      if (room.code === codeA) throw new Error('clock re-arm failed (simulated)');
+    });
+
+    // B: a replay failure — quarantined exactly as before the split.
+    expect(summary.quarantined).toEqual([codeB]);
+    expect(registry2.get(codeB)).toBeUndefined();
+    // A: a re-arm failure is only logged — the room is restored and served,
+    // and its disk row stays clean for the next boot.
+    expect(summary.restored).toEqual([codeA]);
+    const served = registry2.get(codeA);
+    expect(served).toBeDefined();
+    expect(served!.state.phase).toBe('night');
+    expect(rearmCalls.map((c) => c.code)).toEqual([codeA]);
+    expect(rearmCalls[0]?.timerKey).toBe('night:wolf');
+
+    const audit = new Database(dbPath, { readonly: true });
+    const marks = audit.prepare('SELECT code, quarantined_at FROM rooms').all() as {
+      code: string;
+      quarantined_at: number | null;
+    }[];
+    audit.close();
+    expect(marks.find((m) => m.code === codeA)?.quarantined_at).toBeNull();
+    expect(marks.find((m) => m.code === codeB)?.quarantined_at).not.toBeNull();
+    store2.close();
+  });
 });
