@@ -56,9 +56,12 @@ export {
 } from './view';
 export {
   attachGateway,
+  corsPolicyFor,
   createApp,
   type Ack,
   type AppHandle,
+  type AppOptions,
+  type CorsPolicy,
   type GatewayOptions,
   type TimerOverrides,
   type CreateAck,
