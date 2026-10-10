@@ -226,7 +226,9 @@ describe('internal errors never leak detail to clients (F5)', () => {
 
     // A legal wolf vote reaches the hook and fails there — past the engine,
     // exactly the path that echoed the raw message before the fix.
-    const wolfClient = wolfRec === creatorRec ? creator : seats[recs.indexOf(wolfRec) - 1].client;
+    const wolfIndex = recs.indexOf(wolfRec);
+    const wolfClient = wolfRec === creatorRec ? creator : seats[wolfIndex - 1]?.client;
+    if (!wolfClient) throw new Error('wolf client missing from the table');
     wolfClient.emit('game:action', { type: 'WOLF_KILL', actor: wolfView.you.seat, target });
     await waitFor(() => wolfRec.errors.length > 0);
 
