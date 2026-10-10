@@ -11,6 +11,9 @@ const EVIDENCE_DIR = process.env.WEREWOLF_EVIDENCE_DIR;
 test('scenario C: 预女猎守 — guard save, 白狼王 destruct, taken hunter shot', async ({
   browser,
 }) => {
+  // Same CI-contention margin as scenario D — deal-dependent day counts can
+  // push a full game past v1's 300s default.
+  test.setTimeout(540_000);
   const table = await openTable(browser, { board: 'wolfking' });
   try {
     const roles = new Map(table.seats.map((seat) => [seat.seat, seat.role]));
