@@ -4,6 +4,7 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import type { Seat } from '@werewolf/engine';
+import { campOf } from '@werewolf/engine';
 import Database from 'better-sqlite3';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { io } from 'socket.io-client';
@@ -149,6 +150,105 @@ async function driveToStableWindow(sessions: Session[]): Promise<void> {
   const step = host.rec.latest?.step;
   if (!(step?.kind === 'exile-vote')) {
     throw new Error(`vote window closed early: ${JSON.stringify(step)}`);
+  }
+}
+
+/**
+ * Explode/election scenario clocks: the windows the driver acts in — or
+ * restarts inside — get seconds of headroom (a restart cycle costs 1–2s),
+ * everything else stays at the script floor so interrupts, announcements,
+ * and lapsed speech slots self-resolve.
+ */
+function electionTimers(): Record<string, number> {
+  return {
+    ...scriptTimers(),
+    'night:wolf': 8000,
+    'night:witch': 8000,
+    'night:seer': 8000,
+    'sheriff-signup': 8000,
+    'sheriff-speech': 2500,
+    'sheriff-vote': 8000,
+    speech: 8000,
+    'badge-pass': 8000,
+  };
+}
+
+/** The room's living wolf-camp seats, read from each seat's own view. */
+function livingWolfSeats(sessions: Session[]): Seat[] {
+  const wolves: Seat[] = [];
+  for (const s of sessions) {
+    const you = s.rec.latest?.you;
+    if (you === undefined || !you.alive || you.role === null) continue;
+    if (campOf(you.role) === 'wolf') wolves.push(s.seat);
+  }
+  return wolves.sort((a, b) => a - b);
+}
+
+/**
+ * Waits until every seat's own view satisfies pred. Role reads across the
+ * table (livingWolfSeats) are only safe once every socket has caught up —
+ * the host's view alone can lead the others by whole phases.
+ */
+async function waitAllViews(
+  sessions: Session[],
+  what: string,
+  pred: (v: PlayerView) => boolean,
+  timeoutMs = 15_000,
+): Promise<void> {
+  await Promise.all(sessions.map((s) => waitView(s, what, pred, timeoutMs)));
+}
+
+/**
+ * Drives night 1 by hand: the pack knives the lowest non-wolf seat, the
+ * witch and the seer pass. Leaves the room inside the day-1 signup window
+ * with the kill buffered — unannounced, per the day-1 gating.
+ */
+async function driveNightOne(sessions: Session[]): Promise<Seat> {
+  await waitAllViews(
+    sessions,
+    'the night-1 wolf step on every seat',
+    (v) => v.phase === 'night' && v.step.kind === 'night' && v.step.step === 'wolf',
+  );
+  const wolves = livingWolfSeats(sessions);
+  const host = firstOf(sessions);
+  const alive = (host.rec.latest?.players ?? []).filter((p) => p.alive).map((p) => p.seat);
+  const prey = alive.find((s) => !wolves.includes(s));
+  if (prey === undefined) throw new Error('no non-wolf seat to knife');
+  for (const s of sessions) {
+    if (!wolves.includes(s.seat)) continue;
+    s.client.emit('game:action', { type: 'WOLF_KILL', actor: s.seat, target: prey });
+  }
+  await waitView(host, 'the witch step', (v) => v.step.kind === 'night' && v.step.step === 'witch');
+  const witch = sessions.find((s) => {
+    const you = s.rec.latest?.you;
+    return you !== undefined && you.alive && you.role === 'witch';
+  });
+  if (witch) witch.client.emit('game:action', { type: 'WITCH_PASS', actor: witch.seat });
+  await waitView(host, 'the seer step', (v) => v.step.kind === 'night' && v.step.step === 'seer');
+  const seer = sessions.find((s) => {
+    const you = s.rec.latest?.you;
+    return you !== undefined && you.alive && you.role === 'seer';
+  });
+  if (seer) seer.client.emit('game:action', { type: 'SEER_PASS', actor: seer.seat });
+  await waitView(
+    host,
+    'the day-1 signup with the kill buffered',
+    (v) => v.phase === 'sheriff-signup',
+  );
+  return prey;
+}
+
+/** The recorded action stream for a room: one JSON row per applied action. */
+function actionRows(dbPath: string, code: string): string[] {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return (
+      db.prepare('SELECT action FROM room_actions WHERE code = ? ORDER BY seq').all(code) as {
+        action: string;
+      }[]
+    ).map((r) => r.action);
+  } finally {
+    db.close();
   }
 }
 
@@ -404,4 +504,211 @@ describe('persistence — SQLite event store', () => {
     );
     await stopServer(rigC);
   }, 90_000);
+
+  it('replays an action log containing WOLF_EXPLODE byte-identical', async () => {
+    dbPath = resolve(tmpdir(), `werewolf-persist-${randomUUID()}.db`);
+    const rig = await startServer(electionTimers(), { dbPath });
+    const { code, sessions } = await openTable(rig, 12);
+    await startRoom(firstOf(sessions).client);
+    const prey = await driveNightOne(sessions);
+    const host = firstOf(sessions);
+
+    // A living plain wolf blows up the day-1 election: the platform voids,
+    // the buffered kill releases through the dawn announcements, night falls.
+    const wolves = livingWolfSeats(sessions);
+    const wolf = sessions.find((s) => wolves.includes(s.seat));
+    if (!wolf) throw new Error('no wolf session');
+    wolf.client.emit('game:action', { type: 'WOLF_EXPLODE', actor: wolf.seat });
+    await waitView(
+      host,
+      'night-2 after the explode release',
+      (v) => v.phase === 'night' && v.dayNumber === 2,
+      15_000,
+    );
+    await sleep(150); // settle trailing broadcasts before the snapshot
+
+    // Ordering pinned at the view log: the explode is public, the buffered
+    // kill announced after it, and night began with no speech program.
+    const log = host.rec.latest?.log ?? [];
+    expect(log.findIndex((e) => e.type === 'WOLF_EXPLODED')).toBeGreaterThanOrEqual(0);
+    expect(
+      log.findIndex((e) => e.type === 'DEATH_ANNOUNCED'),
+      'the buffered kill released after the explode',
+    ).toBeGreaterThan(log.findIndex((e) => e.type === 'WOLF_EXPLODED'));
+    expect(
+      log.findIndex((e) => e.type === 'NIGHT_BEGAN' && e.dayNumber === 2),
+      'night fell after the release, day program skipped',
+    ).toBeGreaterThan(log.findIndex((e) => e.type === 'DEATH_ANNOUNCED'));
+    // The exploder's death is public through WOLF_EXPLODED — the only
+    // DEATH_ANNOUNCED row is the buffered night kill.
+    expect(log.filter((e) => e.type === 'DEATH_ANNOUNCED').map((e) => e.seat)).toEqual([prey]);
+
+    const before = sessions.map((s) => JSON.stringify(s.rec.latest));
+    const rowsBefore = actionRows(dbPath, code);
+    expect(
+      rowsBefore.some((r) => r.includes('"WOLF_EXPLODE"')),
+      'the explode is in the recorded stream',
+    ).toBe(true);
+    await stopServer(rig);
+
+    const rig2 = await startServer(electionTimers(), { dbPath });
+    expect(rig2.app.registry.get(code), 'room restored under its join code').toBeDefined();
+    const restored = await rejoinAll(rig2.port, code, sessions);
+    await waitFor(() => restored.every((s) => s.rec.latest !== null));
+    expect(restored.map((s) => JSON.stringify(s.rec.latest))).toEqual(before);
+
+    // Zero schema change: the new action rides the same append-only table,
+    // and the restored room only ever appends to the recorded stream.
+    const rowsAfter = actionRows(dbPath, code);
+    expect(rowsAfter.slice(0, rowsBefore.length)).toEqual(rowsBefore);
+    await stopServer(rig2);
+  }, 30_000);
+
+  it('restores a mid-election room with ballots half-cast and deaths still buffered', async () => {
+    dbPath = resolve(tmpdir(), `werewolf-persist-${randomUUID()}.db`);
+    const rig = await startServer(electionTimers(), { dbPath });
+    const { code, sessions } = await openTable(rig, 12);
+    await startRoom(firstOf(sessions).client);
+    const prey = await driveNightOne(sessions);
+    const host = firstOf(sessions);
+
+    // The lowest living non-wolf seat runs; the signup and speech windows
+    // lapse into the ballot.
+    const wolves = livingWolfSeats(sessions);
+    const candidate = sessions.find((s) => {
+      const you = s.rec.latest?.you;
+      return s.seat !== prey && !wolves.includes(s.seat) && you?.alive === true;
+    });
+    if (!candidate) throw new Error('no non-wolf candidate seat');
+    candidate.client.emit('game:action', { type: 'SHERIFF_SIGNUP', actor: candidate.seat });
+    await waitView(host, 'the sheriff ballot', (v) => v.step.kind === 'sheriff-vote', 20_000);
+    const vote = host.rec.latest?.step;
+    if (!(vote?.kind === 'sheriff-vote')) throw new Error('no sheriff vote view');
+
+    // Ten of the eleven ballots cast before the restart; the last seat
+    // withholds so the restored room has live vote state to carry across.
+    const voters = vote.electorate.slice(0, -1);
+    for (const s of sessions) {
+      if (!voters.includes(s.seat)) continue;
+      s.client.emit('game:action', { type: 'SHERIFF_VOTE', actor: s.seat, target: candidate.seat });
+    }
+    await sleep(150); // settle: the ten ballots land, the withheld seat holds the window
+    expect(
+      host.rec.events.some((e) => e.type === 'DEATH_ANNOUNCED'),
+      'deaths stay buffered through the election',
+    ).toBe(false);
+
+    const before = sessions.map((s) => JSON.stringify(s.rec.latest));
+    await stopServer(rig);
+
+    const rig2 = await startServer(electionTimers(), { dbPath });
+    expect(rig2.app.registry.get(code)).toBeDefined();
+    const restored = await rejoinAll(rig2.port, code, sessions);
+    await waitFor(() => restored.every((s) => s.rec.latest !== null));
+    expect(restored.map((s) => JSON.stringify(s.rec.latest))).toEqual(before);
+
+    // The restored room finishes the election: the withheld ballot lapses
+    // into an abstention, the ten cast ballots elect the candidate, and only
+    // then does the buffered kill announce. Had the ballots not survived the
+    // replay, the lapse would void the election instead.
+    const rhost = firstOf(restored);
+    await waitView(rhost, 'day-1 speech after the election', (v) => v.phase === 'speech', 20_000);
+    expect(
+      rhost.rec.events.findIndex((e) => e.type === 'DEATH_ANNOUNCED'),
+      'the kill announced only after the election resolved',
+    ).toBeGreaterThan(rhost.rec.events.findIndex((e) => e.type === 'SHERIFF_ELECTED'));
+    expect(rhost.rec.events.filter((e) => e.type === 'SHERIFF_ELECTED').map((e) => e.seat)).toEqual(
+      [candidate.seat],
+    );
+    expect(rhost.rec.events.filter((e) => e.type === 'DEATH_ANNOUNCED').map((e) => e.seat)).toEqual(
+      [prey],
+    );
+    await stopServer(rig2);
+  }, 40_000);
+
+  it('restores mid-explode-settlement — the badge window resolves before night', async () => {
+    dbPath = resolve(tmpdir(), `werewolf-persist-${randomUUID()}.db`);
+    const rig = await startServer(electionTimers(), { dbPath });
+    const { code, sessions } = await openTable(rig, 12);
+    await startRoom(firstOf(sessions).client);
+    await driveNightOne(sessions);
+    const host = firstOf(sessions);
+
+    // The lowest living wolf runs for sheriff: signs up, speaks his slot,
+    // and every 警下 ballot lands on him.
+    const wolves = livingWolfSeats(sessions);
+    const wolfSession = sessions.find((s) => wolves.includes(s.seat));
+    if (!wolfSession) throw new Error('no wolf session');
+    wolfSession.client.emit('game:action', { type: 'SHERIFF_SIGNUP', actor: wolfSession.seat });
+    await waitView(
+      host,
+      "the candidate's speech slot",
+      (v) => v.step.kind === 'sheriff-speech' && v.step.queue[v.step.cursor] === wolfSession.seat,
+      20_000,
+    );
+    wolfSession.client.emit('game:action', {
+      type: 'SPEAK',
+      actor: wolfSession.seat,
+      text: '警上发言',
+    });
+    await waitView(host, 'the sheriff ballot', (v) => v.step.kind === 'sheriff-vote', 20_000);
+    const ballot = host.rec.latest?.step;
+    if (!(ballot?.kind === 'sheriff-vote')) throw new Error('no sheriff vote view');
+    for (const s of sessions) {
+      if (!ballot.electorate.includes(s.seat)) continue;
+      s.client.emit('game:action', {
+        type: 'SHERIFF_VOTE',
+        actor: s.seat,
+        target: wolfSession.seat,
+      });
+    }
+    await waitView(host, 'the day-1 speech', (v) => v.phase === 'speech', 20_000);
+
+    // The badge holder sets the direction, then blows up the day: his badge
+    // window opens — the settlement pauses mid-flight for the restart.
+    const sheriff = sessions.find((s) => s.rec.latest?.you.hasBadge === true);
+    if (!sheriff) throw new Error('no badge holder session');
+    expect(sheriff.seat).toBe(wolfSession.seat);
+    sheriff.client.emit('game:action', {
+      type: 'SET_SPEECH_DIRECTION',
+      actor: sheriff.seat,
+      direction: 'cw',
+    });
+    sheriff.client.emit('game:action', { type: 'WOLF_EXPLODE', actor: sheriff.seat });
+    await waitView(host, "the sheriff's badge window", (v) => v.step.kind === 'badge-pass', 15_000);
+    const badgeStep = host.rec.latest?.step;
+    if (!(badgeStep?.kind === 'badge-pass')) throw new Error('no badge-pass view');
+    expect(badgeStep.seat).toBe(sheriff.seat);
+    await sleep(150); // settle trailing broadcasts before the snapshot
+
+    const before = sessions.map((s) => JSON.stringify(s.rec.latest));
+    const rowsBefore = actionRows(dbPath, code);
+    expect(rowsBefore.some((r) => r.includes('"WOLF_EXPLODE"'))).toBe(true);
+    await stopServer(rig);
+
+    const rig2 = await startServer(electionTimers(), { dbPath });
+    expect(rig2.app.registry.get(code)).toBeDefined();
+    const restored = await rejoinAll(rig2.port, code, sessions);
+    await waitFor(() => restored.every((s) => s.rec.latest !== null));
+    expect(restored.map((s) => JSON.stringify(s.rec.latest))).toEqual(before);
+
+    // The restored badge window lapses into 撕毁 (SHERIFF_PASS target:null);
+    // the settlement then drains into night — the badge resolved first.
+    const rhost = firstOf(restored);
+    await waitView(
+      rhost,
+      'night-2 after the badge resolution',
+      (v) => v.phase === 'night' && v.dayNumber === 2,
+      20_000,
+    );
+    expect(rhost.rec.events.some((e) => e.type === 'NIGHT_BEGAN')).toBe(true);
+    expect(
+      (rhost.rec.latest?.players ?? [])
+        .filter((p) => p.seat === sheriff.seat)
+        .map((p) => p.hasBadge),
+    ).toEqual([false]);
+    const rowsAfter = actionRows(dbPath, code);
+    expect(rowsAfter.slice(0, rowsBefore.length)).toEqual(rowsBefore);
+    await stopServer(rig2);
+  }, 40_000);
 });
