@@ -32,6 +32,8 @@ export interface SeatView {
   revealedIdiot?: boolean;
   /** A session holds this seat. Undefined reads as occupied (mid-game rows are always seated). */
   occupied?: boolean;
+  /** A server-seated AI player — the lobby's AI badge. */
+  isBot?: boolean;
 }
 
 /** One entry in the seer's private check history. */

@@ -3,6 +3,8 @@ import { Server, type Socket } from 'socket.io';
 import type { GameEvent, PlayerAction, Seat } from '@werewolf/engine';
 import { GameError } from '@werewolf/engine';
 import { RoomError } from './errors';
+import { BotManager } from './bots';
+import type { BotStrategy } from '@werewolf/bots';
 import { RoomRegistry, type Room } from './room';
 import { clockKey, DEFAULT_TIMERS } from './defaults';
 import { eventsForSeat, viewFor, type PlayerView, type TimerInfo } from './view';
@@ -22,7 +24,7 @@ import {
 /** Freeform speech longer than this is rejected as a bad action. */
 const MAX_SPEECH_LENGTH = 2000;
 
-type Ack<T> = (resp: T | { error: string }) => void;
+export type Ack<T> = (resp: T | { error: string }) => void;
 
 export interface CreateAck {
   roomCode: string;
@@ -38,6 +40,12 @@ export interface RejoinAck {
 
 export interface OkAck {
   ok: true;
+}
+
+/** addBot ack: the seat the AI player took and its pool nickname. */
+export interface AddBotAck {
+  seat: Seat;
+  name: string;
 }
 
 export interface ErrorPayload {
@@ -63,6 +71,10 @@ export interface ClientToServerEvents {
   'room:start': (ack: Ack<OkAck>) => void;
   /** Lobby-only quit: frees the seat and kills the session token. */
   'room:leave': (ack: Ack<OkAck>) => void;
+  /** Lobby-only: seat an AI player (lowest free seat, server-held token). */
+  'room:addBot': (ack: Ack<AddBotAck>) => void;
+  /** Lobby-only: retire an AI player and free its seat. */
+  'room:removeBot': (seat: Seat, ack: Ack<OkAck>) => void;
   'game:action': (action: PlayerAction) => void;
   /** Raw mic audio from the current speaker of a speech slot; violations drop. */
   'voice:frame': (chunk: ArrayBuffer) => void;
@@ -127,6 +139,7 @@ export function attachGateway(
   registry: RoomRegistry,
   opts?: GatewayOptions,
   store?: EventStore,
+  botManager?: BotManager,
 ): { dispose(): void; rearmRestored(room: Room, timer: TimerRowRaw | null): void } {
   const timers: Record<string, number> = { ...DEFAULT_TIMERS, ...opts?.timers };
   const roomSockets = new Map<string, Set<GatewaySocket>>();
@@ -174,7 +187,13 @@ export function attachGateway(
   function emitView(socket: GatewaySocket, room: Room, seat: Seat | null): void {
     socket.emit(
       'game:view',
-      viewFor(room.state, seat, deadlines.get(room.code) ?? null, room.occupiedSeats()),
+      viewFor(
+        room.state,
+        seat,
+        deadlines.get(room.code) ?? null,
+        room.occupiedSeats(),
+        room.botSeats(),
+      ),
     );
   }
 
@@ -417,6 +436,55 @@ export function attachGateway(
       broadcastOccupancy(room);
     });
 
+    // Lobby-only bot seating. Any seated human may call it — the room model
+    // has no host identity, matching room:start's authorization. The raw
+    // runner token stays server-side; the ack surfaces only seat + nickname.
+    socket.on('room:addBot', (ack) => {
+      if (typeof ack !== 'function') return;
+      const { roomCode, seat } = socket.data;
+      const room = roomCode ? registry.get(roomCode) : undefined;
+      if (!room || seat === null) {
+        ack({ error: 'NO_SEAT' });
+        return;
+      }
+      if (!botManager) {
+        ack({ error: 'BOTS_UNAVAILABLE' });
+        return;
+      }
+      try {
+        const added = botManager.addBot(room);
+        ack({ seat: added.seat, name: added.name });
+        broadcastOccupancy(room);
+      } catch (error) {
+        ack({ error: errorPayload(error).code });
+      }
+    });
+
+    socket.on('room:removeBot', (botSeat, ack) => {
+      if (typeof ack !== 'function') return;
+      const { roomCode, seat } = socket.data;
+      const room = roomCode ? registry.get(roomCode) : undefined;
+      if (!room || seat === null) {
+        ack({ error: 'NO_SEAT' });
+        return;
+      }
+      if (typeof botSeat !== 'number' || !Number.isInteger(botSeat)) {
+        ack({ error: 'BAD_ACTION' });
+        return;
+      }
+      if (!botManager) {
+        ack({ error: 'BOTS_UNAVAILABLE' });
+        return;
+      }
+      try {
+        botManager.removeBot(room, botSeat);
+        ack({ ok: true });
+        broadcastOccupancy(room);
+      } catch (error) {
+        ack({ error: errorPayload(error).code });
+      }
+    });
+
     socket.on('game:action', (raw) => {
       const { roomCode, seat } = socket.data;
       const room = roomCode ? registry.get(roomCode) : undefined;
@@ -499,6 +567,8 @@ export interface AppHandle {
   io: GatewayServer;
   registry: RoomRegistry;
   httpServer: HttpServer;
+  /** Custodian of the loopback runners for every bot seat. */
+  botManager: BotManager;
   close(): Promise<void>;
 }
 
@@ -512,22 +582,47 @@ export interface AppHandle {
  * rooms, seat tokens, speeches, votes, and running clocks survive restarts.
  * Without a dbPath the registry is in-memory (v1 behavior).
  */
-export function createApp(
-  opts?: GatewayOptions & { httpServer?: HttpServer; dbPath?: string },
-): AppHandle {
+/** createApp's full options: attach options plus the composition knobs. */
+export interface AppOptions extends GatewayOptions {
+  httpServer?: HttpServer;
+  dbPath?: string;
+  /** Bot brain factory — see BotManager. Omit for the scripted brain. */
+  botStrategyFactory?: () => BotStrategy;
+}
+
+export function createApp(opts?: AppOptions): AppHandle {
   const httpServer = opts?.httpServer ?? createServer();
   const io: GatewayServer = new Server(httpServer, {
     cors: { origin: true, credentials: true },
   });
   const store = opts?.dbPath !== undefined ? new EventStore(opts.dbPath) : undefined;
   const registry = new RoomRegistry(store ? storeHooksFor(store) : undefined);
-  const gateway = attachGateway(io, registry, opts, store);
-  if (store) restoreRooms(store, registry, gateway.rearmRestored);
+  // Bots are loopback clients of this very server, so the manager resolves
+  // the listen address lazily — runners scheduled before `listen` retry
+  // until it is bound (boot-time respawn in port-0 test servers).
+  const botManager = new BotManager(() => {
+    const address = httpServer.address();
+    if (address !== null && typeof address === 'object') {
+      return `http://127.0.0.1:${address.port}`;
+    }
+    throw new Error('server is not listening yet');
+  }, opts?.botStrategyFactory);
+  const gateway = attachGateway(io, registry, opts, store, botManager);
+  if (store) {
+    const summary = restoreRooms(store, registry, gateway.rearmRestored);
+    // Respawned runners: every restored bot seat needs its player back.
+    for (const code of summary.restored) {
+      const room = registry.get(code);
+      if (room) botManager.spawnFor(room);
+    }
+  }
   return {
     io,
     registry,
     httpServer,
+    botManager,
     async close() {
+      botManager.retireAll();
       gateway.dispose();
       await new Promise<void>((resolve) => io.close(() => resolve()));
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));

@@ -18,8 +18,8 @@ test('lobby shows true occupancy and quit frees the seat', async ({ browser }) =
 
   // The reported bug: one seated player claimed 12/12.
   await expect(creator.locator(SELECTORS.lobbyCount).last()).toHaveText('1/12 人已入座');
-  // Below the 5-seat floor the start control says so instead of erroring later.
-  await expect(creator.getByRole('button', { name: '至少 5 人开局' })).toBeDisabled();
+  // Below the exactly-12 rule the start control says so instead of erroring later.
+  await expect(creator.getByRole('button', { name: '人满后开局' })).toBeDisabled();
 
   const joinerContext = await browser.newContext();
   const joiner = await joinerContext.newPage();

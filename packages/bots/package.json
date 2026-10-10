@@ -1,0 +1,23 @@
+{
+  "name": "@werewolf/bots",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "@werewolf/engine": "*",
+    "@werewolf/server": "*",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

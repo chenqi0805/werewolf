@@ -49,6 +49,7 @@ export {
 export {
   attachGateway,
   createApp,
+  type Ack,
   type AppHandle,
   type GatewayOptions,
   type TimerOverrides,
@@ -56,11 +57,14 @@ export {
   type JoinAck,
   type RejoinAck,
   type OkAck,
+  type AddBotAck,
   type ErrorPayload,
   type ServerToClientEvents,
   type ClientToServerEvents,
   type SocketData,
 } from './gateway';
+export { BotManager } from './bots';
+export { BOT_NICKNAMES, pickBotNickname } from './botNames';
 export {
   currentSpeechSlot,
   gateVoiceFrame,
