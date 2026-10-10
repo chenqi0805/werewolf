@@ -11,7 +11,7 @@ import styles from './StrategyPanel.module.css';
 export interface StrategyPanelProps {
   /** The viewer's own role — the advisor's frame of reference. */
   role: Role;
-  /** Day-grouped public speech record — `speechByDayOf(view.log)`. */
+  /** Day-grouped public speech record — `speechByDayOf(view)`. */
   dayRecords: Array<{ day: number; records: SpeechRecord[] }>;
   /** Injected assistant request; GameScreen wires it to `requestStrategy(socket)`. */
   onSuggest: () => Promise<StrategyReply>;

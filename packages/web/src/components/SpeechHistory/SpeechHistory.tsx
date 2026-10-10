@@ -4,7 +4,7 @@ import type { SpeechRecord } from '../../types';
 import styles from './SpeechHistory.module.css';
 
 export interface SpeechHistoryProps {
-  /** Day-grouped speech records, days ascending — `speechByDayOf(view.log)`. */
+  /** Day-grouped speech records, days ascending — `speechByDayOf(view)`. */
   groups: Array<{ day: number; records: SpeechRecord[] }>;
 }
 

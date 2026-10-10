@@ -79,7 +79,7 @@ function CandidateList({ seats }: { seats: SeatView[] }): JSX.Element {
 export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): JSX.Element {
   const seats: SeatView[] = seatViewsOf(view);
   const entries = logToEntries(view.log, view.board);
-  const speechGroups = speechByDayOf(view.log);
+  const speechGroups = speechByDayOf(view);
   const { you } = view;
   const step = view.step;
   const [showTutorial, setShowTutorial] = useState(false);
@@ -125,7 +125,7 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
           <SpectatorView
             seats={seats}
             speakingSeat={speakingSeatOf(step)}
-            messages={speechMessagesOf(view.log)}
+            messages={speechMessagesOf(view)}
             dayNumber={view.dayNumber}
             phaseCaption="观战"
           />
@@ -272,7 +272,7 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
           {speechKind !== null && (
             <>
               <SpeechPanel
-                messages={speechMessagesOf(view.log)}
+                messages={speechMessagesOf(view)}
                 speakingSeat={speakingSeatOf(step)}
                 mySeat={seat}
                 canSpeak={canSpeak}
