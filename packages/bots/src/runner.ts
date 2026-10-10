@@ -52,11 +52,16 @@ export interface BotRunnerOptions {
  */
 export class BotRunner {
   private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
+  /** The socket of an attempt still settling — owned by tryConnect until attach. */
+  private pending: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
   private running = false;
+  private finished = false;
   private deciding = false;
   private latest: PlayerView | null = null;
   private readonly sent = new Set<string>();
   private lastEmitted: { fingerprint: string; at: number } | null = null;
+  /** Settles the in-flight connect attempt as a failure (teardown, retries). */
+  private abortConnect: (() => void) | null = null;
   private readonly rng: () => number;
 
   constructor(private readonly opts: BotRunnerOptions) {
@@ -66,6 +71,7 @@ export class BotRunner {
   /** Fire and forget: connects (with retry), rejoins the seat, then plays. */
   start(): void {
     if (this.running) return;
+    this.finished = false; // a restarted runner may end again
     this.running = true;
     void this.connect();
   }
@@ -83,12 +89,21 @@ export class BotRunner {
   }
 
   private finish(reason: BotEndReason): void {
-    const socket = this.socket;
-    this.socket = null;
-    if (socket) {
-      socket.removeAllListeners();
-      socket.disconnect();
+    if (this.finished) return;
+    this.finished = true;
+    // Settle an in-flight attempt (no dangling tryConnect promise) and tear
+    // down both a live socket and one still connecting: stop() during the
+    // latter used to strand the socket and re-fire onEnd on its late view.
+    this.abortConnect?.();
+    for (const socket of [this.socket, this.pending]) {
+      if (socket) {
+        socket.removeAllListeners();
+        socket.disconnect();
+      }
     }
+    this.socket = null;
+    this.pending = null;
+    this.abortConnect = null;
     this.opts.onEnd?.(reason);
   }
 
@@ -122,16 +137,21 @@ export class BotRunner {
         reconnection: false,
         timeout: 2000,
       });
+      this.pending = socket;
       let settled = false;
       const settle = (ok: boolean): void => {
         if (settled) return;
         settled = true;
+        if (this.pending === socket) this.pending = null;
+        this.abortConnect = null; // attempts are sequential — this settle owns the slot
         if (!ok) {
           socket.removeAllListeners();
           socket.disconnect();
         }
         resolve(ok);
       };
+      const abort = (): void => settle(false);
+      this.abortConnect = abort;
       socket.once('connect', () => {
         this.attach(socket);
         // Rejoin works pre-game and mid-game alike — a restarted server
