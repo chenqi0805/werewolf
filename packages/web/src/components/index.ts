@@ -16,6 +16,7 @@ export { DestructControl } from './DestructControl/DestructControl';
 export type { DestructControlProps } from './DestructControl/DestructControl';
 export { GuardPad } from './GuardPad/GuardPad';
 export type { GuardPadProps, GuardPadOptions } from './GuardPad/GuardPad';
+export { NightVillageBackground } from './NightVillageBackground/NightVillageBackground';
 export { SpeechPanel } from './SpeechPanel/SpeechPanel';
 export type { SpeechPanelProps } from './SpeechPanel/SpeechPanel';
 export { StrategyPanel } from './StrategyPanel/StrategyPanel';

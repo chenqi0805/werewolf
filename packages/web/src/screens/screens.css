@@ -160,3 +160,11 @@
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
+
+/* Game screen with the village backdrop: the screen owns a stacking context so
+   the fixed art layer (z-index: -1) paints below every panel but above the
+   themed page background. */
+.scr-page--village {
+  position: relative;
+  z-index: 0;
+}
