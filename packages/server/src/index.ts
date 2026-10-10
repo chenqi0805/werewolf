@@ -18,6 +18,13 @@ export {
   type SeatRow,
 } from './room';
 export { RoomError, type RoomErrorCode } from './errors';
+export {
+  DEFAULT_LIMITS,
+  IpWindowLimiter,
+  parseLimits,
+  type LimitOverrides,
+  type Limits,
+} from './limits';
 export { shuffledDeck } from './deck';
 export { makeRoomCode, makeToken, hashToken } from './ids';
 export {
