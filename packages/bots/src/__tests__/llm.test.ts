@@ -120,6 +120,18 @@ describe('isLegalFor', () => {
     expect(isLegalFor(sheriffPk, { type: 'EXILE_VOTE', actor: 3, target: 1 })).toBe(false);
   });
 
+  it('accepts the guard actions while the night waits on him, and the wolf step still rejects them', () => {
+    const guardTurn = view({
+      you: you(12, 'guard'),
+      step: { kind: 'night', step: 'wolf', guardPending: true },
+    });
+    expect(isLegalFor(guardTurn, { type: 'GUARD_PROTECT', actor: 12, target: 9 })).toBe(true);
+    expect(isLegalFor(guardTurn, { type: 'GUARD_PASS', actor: 12 })).toBe(true);
+    const wolfTurn = view({ you: you(3, 'werewolf'), step: { kind: 'night', step: 'wolf' } });
+    expect(isLegalFor(wolfTurn, { type: 'GUARD_PROTECT', actor: 3, target: 9 })).toBe(false);
+    expect(isLegalFor(wolfTurn, { type: 'GUARD_PASS', actor: 3 })).toBe(false);
+  });
+
   it('gates interrupt windows to the seat whose window is open', () => {
     const otherShot = view({
       you: you(5, 'hunter', { hunterShotUsed: false }),
