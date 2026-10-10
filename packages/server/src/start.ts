@@ -19,6 +19,7 @@ const webDist = process.env.WEREWOLF_WEB_DIST;
 const voice = parseVoiceEnv();
 const assistant = parseAssistantEnv();
 const invites = parseInviteEnv();
+const publicBaseUrl = parsePublicBaseUrlEnv();
 const botBrains = parseBotBrainEnv();
 // Rooms persist by default: the SQLite file lands under the working
 // directory (the hosted deployment's workdir), so rooms, tokens, speeches,
@@ -36,6 +37,7 @@ if (assistant !== null) {
 }
 if (botBrains !== null) opts.botStrategyFactory = botBrains;
 if (invites !== null) opts.invites = invites;
+if (publicBaseUrl !== null) opts.publicBaseUrl = publicBaseUrl;
 
 const app = createApp({ ...opts, dbPath });
 if (webDist !== undefined && webDist !== '') {
@@ -192,4 +194,17 @@ function parseInviteEnv(): InviteOptions | null {
     from: from !== undefined && from !== '' ? from : DEFAULT_INVITE_FROM,
     apiKey,
   };
+}
+
+/**
+ * WEREWOLF_PUBLIC_BASE_URL also sets the Socket.IO CORS policy (audit F6):
+ * configured = only this origin may connect from a browser; unset keeps the
+ * permissive dev echo. Same boot-loud validation as the invite sender, and
+ * the value rides to the gateway even when the email key is unset, so a
+ * configured origin is always honored.
+ */
+function parsePublicBaseUrlEnv(): string | null {
+  const raw = process.env.WEREWOLF_PUBLIC_BASE_URL;
+  if (raw === undefined || raw === '') return null;
+  return validatePublicBaseUrl(raw);
 }

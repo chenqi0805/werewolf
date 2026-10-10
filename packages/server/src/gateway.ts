@@ -163,6 +163,14 @@ export interface GatewayOptions {
    * request acks INVITE_UNAVAILABLE; the lobby view hides the affordance.
    */
   invites?: InviteOptions;
+  /**
+   * The deployment's public origin (WEREWOLF_PUBLIC_BASE_URL). Set = the
+   * Socket.IO CORS policy answers preflights with this origin only, so a
+   * browser handshake from any other origin fails its origin check. Unset
+   * (localhost/dev) keeps the permissive origin echo. Credentials are never
+   * allowed either way — the client carries no cookies.
+   */
+  publicBaseUrl?: string;
 }
 
 /**
@@ -782,10 +790,33 @@ export interface AppOptions extends GatewayOptions {
   botStrategyFactory?: () => BotStrategy;
 }
 
+/** The CORS response shape Socket.IO accepts for its `cors` option. */
+export interface CorsPolicy {
+  origin: string | boolean;
+  credentials: boolean;
+}
+
+/**
+ * The Socket.IO CORS policy (audit F6). The client authenticates with its
+ * session token in the handshake payload, never cookies, so credentials are
+ * always refused. When a public base URL is configured, only that origin may
+ * reach the server from a browser: the policy answers preflights with the
+ * configured origin alone, and any other requesting origin fails the
+ * browser's origin check on the response. Unset (localhost/dev) keeps the
+ * permissive origin echo so development setups — the Vite proxy, LAN
+ * clients — are untouched. A malformed URL throws here, the same
+ * fail-loudly-at-boot contract as the invite sender's validation.
+ */
+export function corsPolicyFor(publicBaseUrl?: string): CorsPolicy {
+  const origin =
+    publicBaseUrl !== undefined && publicBaseUrl !== '' ? new URL(publicBaseUrl).origin : true;
+  return { origin, credentials: false };
+}
+
 export function createApp(opts?: AppOptions): AppHandle {
   const httpServer = opts?.httpServer ?? createServer();
   const io: GatewayServer = new Server(httpServer, {
-    cors: { origin: true, credentials: true },
+    cors: corsPolicyFor(opts?.publicBaseUrl),
   });
   const store = opts?.dbPath !== undefined ? new EventStore(opts.dbPath) : undefined;
   const registry = new RoomRegistry(store ? storeHooksFor(store) : undefined);
