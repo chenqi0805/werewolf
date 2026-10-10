@@ -273,6 +273,46 @@ export interface AskSpec {
 }
 
 /**
+ * Concatenates `delta.content` fragments from an OpenAI-compatible SSE stream.
+ * Reasoning deltas (e.g. Qwen3 `reasoning_content`) are ignored — the strict
+ * JSON validation applies to the assembled answer text.
+ */
+async function textFromStreamingCompletion(response: Response): Promise<string | null> {
+  if (!response.body) return null;
+  let text = '';
+  let buffered = '';
+  const reader = response.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffered += Buffer.from(value).toString('utf8');
+      let nl: number;
+      while ((nl = buffered.indexOf('\n')) !== -1) {
+        const line = buffered.slice(0, nl).trim();
+        buffered = buffered.slice(nl + 1);
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+          };
+          text +=
+            parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content ?? '';
+        } catch {
+          // Malformed frame — skip it; strict-JSON validation runs on the
+          // assembled text regardless.
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return text.length > 0 ? text : null;
+}
+
+/**
  * One provider round trip. The OpenAI-compatible path tries guided decoding
  * first (structured outputs where the runtime supports it) and falls back to
  * a plain request when the endpoint rejects the field — belt and suspenders,
@@ -315,6 +355,12 @@ async function askProvider(
         model: provider.model,
         max_tokens: spec.maxTokens,
         messages,
+        // Streaming sidesteps response-header timeouts entirely: CPU-backed
+        // runtimes can spend tens of minutes before a non-streamed completion
+        // sends its first byte, but SSE headers arrive at once and tokens keep
+        // the connection warm (the dispatcher's body timeout applies between
+        // chunks, not to the whole generation).
+        stream: true,
         ...(guided
           ? {
               response_format: {
@@ -334,6 +380,10 @@ async function askProvider(
       // response_format — retry once without it before giving up.
       if (guided && response.status >= 400 && response.status < 500) continue;
       throw new AssistantProviderError(`HTTP ${response.status}`);
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('text/event-stream')) {
+      return textFromStreamingCompletion(response);
     }
     return textFromChatCompletion(await response.json());
   }
