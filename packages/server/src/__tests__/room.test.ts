@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Role, Seat } from '@werewolf/engine';
+import type { GameAction, Role, Seat } from '@werewolf/engine';
 import { RoomError } from '../errors';
 import { hashToken } from '../ids';
 import { Room, type SeatIdentity } from '../room';
 import { viewFor } from '../view';
-import { ALL_SEATS, fixedRoom } from './fixtures';
+import { ALL_SEATS, fixedRoom, STANDARD } from './fixtures';
 import * as drv from './drivers';
 
 /** Server-only event types — the same rule the view tests enforce. */
@@ -331,5 +331,58 @@ describe('lobby seat release', () => {
       expect(error).toBeInstanceOf(RoomError);
       expect((error as RoomError).code).toBe('NO_SEAT');
     }
+  });
+});
+
+describe('Room persistence rollback (SRV-4)', () => {
+  it('rolls memory back to the pre-action state when the onAction hook throws', () => {
+    const appended: GameAction[] = [];
+    let failNextAppend = false;
+    const room = new Room({
+      code: 'ROLLBACK',
+      assignments: [...STANDARD],
+      hooks: {
+        onAction: (_room, action) => {
+          if (failNextAppend) throw new Error('disk full (simulated store failure)');
+          appended.push(action);
+        },
+      },
+    });
+    for (let i = 0; i < 12; i++) room.join();
+    room.start();
+
+    // Mid-game position: the first wolf's knife is recorded, the second
+    // wolf's ballot is where the append will fail.
+    const wolves = Object.values(room.state.players)
+      .filter((p) => p.alive && p.role === 'werewolf')
+      .map((p) => p.seat)
+      .sort((a, b) => a - b);
+    const firstWolf = wolves[0];
+    const secondWolf = wolves[1];
+    if (firstWolf === undefined || secondWolf === undefined) {
+      throw new Error('fixed deck must deal at least two wolves');
+    }
+    room.applyPlayerAction({ type: 'WOLF_KILL', actor: firstWolf, target: 5 });
+    const before = JSON.stringify(room.state);
+    const viewsBefore = ALL_SEATS.map((s) => JSON.stringify(viewFor(room.state, s)));
+
+    failNextAppend = true;
+    expect(() =>
+      room.applyPlayerAction({ type: 'WOLF_KILL', actor: secondWolf, target: 5 }),
+    ).toThrow('disk full (simulated store failure)');
+
+    // The throw surfaces to the caller (the gateway turns it into a
+    // game:error for the actor) and the room's memory is byte-identical to
+    // before the action — the state and every seat's fog-of-war view.
+    expect(JSON.stringify(room.state)).toBe(before);
+    ALL_SEATS.forEach((seat, i) => {
+      expect(JSON.stringify(viewFor(room.state, seat))).toBe(viewsBefore[i]);
+    });
+
+    // Recovery: the next successful action appends after the last recorded
+    // one — the failed append never entered the stream.
+    failNextAppend = false;
+    room.applyPlayerAction({ type: 'WOLF_KILL', actor: secondWolf, target: 5 });
+    expect(appended.map((a) => a.type)).toEqual(['START_GAME', 'WOLF_KILL', 'WOLF_KILL']);
   });
 });
