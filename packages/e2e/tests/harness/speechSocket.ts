@@ -10,6 +10,8 @@ import type {
 
 type SpeechSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
+export type { SpeechSocket as SeatSpeechSocket };
+
 interface StoredSession {
   roomCode: string;
   seat: number;
@@ -89,6 +91,16 @@ export async function speakViaSocket(seat: Seat, page: Page, text: string): Prom
   if (view === undefined || !isMySpeechSlot(view, seat)) return false;
   socket.emit('game:action', { type: 'SPEAK', actor: seat, text });
   return true;
+}
+
+/**
+ * Opens (or returns) the seat's rider socket for callers that attach their own
+ * handlers — the voice scenario listens for relayed `voice:chunk`s and public
+ * `game:event`s on it. The socket joins the room's socket set, so the relay
+ * treats it as one more table member.
+ */
+export async function openSeatSocket(seat: Seat, page: Page): Promise<SpeechSocket> {
+  return ensureSeatSocket(seat, page);
 }
 
 /** Closes every speaker socket — called with the table teardown. */
