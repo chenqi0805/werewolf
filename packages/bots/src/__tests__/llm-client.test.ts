@@ -72,6 +72,7 @@ function wolfKillView(seat: Seat): PlayerView {
     players: [
       {
         seat,
+        name: '',
         alive: true,
         hasBadge: false,
         revealedIdiot: false,

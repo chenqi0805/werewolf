@@ -12,9 +12,10 @@ export {
   type Applied,
   type RoomOptions,
   type SeatRecord,
+  type SeatIdentity,
   type ActionSource,
   type RoomHooks,
-  type SeatTokenHash,
+  type SeatRow,
 } from './room';
 export { RoomError, type RoomErrorCode } from './errors';
 export { shuffledDeck } from './deck';

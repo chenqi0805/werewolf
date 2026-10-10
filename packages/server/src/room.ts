@@ -19,10 +19,12 @@ import { defaultActionsFor } from './defaults';
 /** Where an applied action came from — provenance in the persisted stream. */
 export type ActionSource = 'player' | 'server' | 'timer';
 
-/** A seat as persisted: the token is stored hashed, never raw. */
-export interface SeatTokenHash {
+/** A seat row as persisted: the token is stored hashed, never raw. */
+export interface SeatRow {
   seat: Seat;
   tokenHash: string;
+  /** The seat's display name, restored verbatim across restarts. */
+  name: string;
 }
 
 /**
@@ -46,6 +48,17 @@ export interface RoomHooks {
 export interface SeatRecord {
   seat: Seat;
   sessionToken: string;
+}
+
+/**
+ * What one seated human identity stores at rest: the hashed bearer
+ * credential plus the display name chosen at the door. Names are room
+ * metadata — the engine's GameState never learns them.
+ */
+export interface SeatIdentity {
+  tokenHash: string;
+  /** Trimmed and capped by the gateway at join; '' falls back to the seat label. */
+  name: string;
 }
 
 /** Aggregated result of a room mutation — what the gateway fans out. */
@@ -73,19 +86,23 @@ export interface RoomOptions {
    * from the pool in seat order (names are cosmetic; only bot-ness is
    * durable) and their raw tokens are reminted by the bot manager.
    */
-  restored?: { state: GameState; seats: ReadonlyMap<Seat, string>; bots?: ReadonlySet<Seat> };
+  restored?: {
+    state: GameState;
+    seats: ReadonlyMap<Seat, SeatIdentity>;
+    bots?: ReadonlySet<Seat>;
+  };
 }
 
 /**
- * One game table. The Room owns the engine state and the seat-token map; it
- * knows nothing about sockets. All mutations go through the engine's
- * applyAction, so the room adds zero rule knowledge.
+ * One game table. The Room owns the engine state and the seat records
+ * (token hash + display name); it knows nothing about sockets. All mutations
+ * go through the engine's applyAction, so the room adds zero rule knowledge.
  */
 export class Room {
   readonly code: string;
 
-  /** seat → sha256(session token) — the hash is also the persisted form. */
-  private readonly seats = new Map<Seat, string>();
+  /** seat → token hash (at rest) + display name chosen at the door. */
+  private readonly seats = new Map<Seat, SeatIdentity>();
 
   /** seat → server-picked nickname; membership here means the seat is a bot. */
   private readonly botNames = new Map<Seat, string>();
@@ -99,8 +116,8 @@ export class Room {
     this.hooks = opts.hooks;
     if (opts.restored) {
       this.currentState = opts.restored.state;
-      for (const [seat, tokenHash] of opts.restored.seats) {
-        this.seats.set(seat, tokenHash);
+      for (const [seat, identity] of opts.restored.seats) {
+        this.seats.set(seat, identity);
       }
       if (opts.restored.bots) {
         for (const seat of [...opts.restored.bots].sort((a, b) => a - b)) {
@@ -141,14 +158,15 @@ export class Room {
     return this.currentState.phase === 'game-over';
   }
 
-  /** Lowest free seat, filled in join order. */
-  join(): SeatRecord {
+  /** Lowest free seat, filled in join order. The name is already
+   * gateway-normalized (trimmed, capped); the room stores it verbatim. */
+  join(name = ''): SeatRecord {
     if (this.hasStarted()) {
       throw new RoomError('GAME_RUNNING', 'The game is already running.');
     }
     const seat = this.firstFreeSeat();
     const sessionToken = makeToken();
-    this.seats.set(seat, hashToken(sessionToken));
+    this.seats.set(seat, { tokenHash: hashToken(sessionToken), name });
     this.hooks?.onSeatsChanged?.(this);
     return { seat, sessionToken };
   }
@@ -157,8 +175,8 @@ export class Room {
    * matched against the seat map, whose entries are hashes at rest. */
   reattach(token: string): Seat {
     const hash = hashToken(token);
-    for (const [seat, known] of this.seats) {
-      if (known === hash) return seat;
+    for (const [seat, identity] of this.seats) {
+      if (identity.tokenHash === hash) return seat;
     }
     throw new RoomError('BAD_TOKEN', 'No seat matches this session token.');
   }
@@ -166,6 +184,20 @@ export class Room {
   /** Seats currently held by a session — the lobby's true occupancy. */
   occupiedSeats(): ReadonlySet<Seat> {
     return new Set(this.seats.keys());
+  }
+
+  /** The display name one seat chose at the door; '' = none (label fallback). */
+  seatName(seat: Seat): string {
+    return this.seats.get(seat)?.name ?? '';
+  }
+
+  /** seat → display name — the view's PlayerRow.name, like botSeats(). */
+  seatNames(): ReadonlyMap<Seat, string> {
+    const names = new Map<Seat, string>();
+    for (const [seat, identity] of this.seats) {
+      if (identity.name !== '') names.set(seat, identity.name);
+    }
+    return names;
   }
 
   /** seat → nickname for every AI seat — the view's badge and label. */
@@ -188,7 +220,7 @@ export class Room {
     }
     const seat = this.firstFreeSeat();
     const token = makeToken();
-    this.seats.set(seat, hashToken(token));
+    this.seats.set(seat, { tokenHash: hashToken(token), name: '' });
     const name = pickBotNickname(new Set(this.botNames.values()));
     this.botNames.set(seat, name);
     this.hooks?.onSeatsChanged?.(this);
@@ -219,7 +251,7 @@ export class Room {
       throw new RoomError('NOT_A_BOT', 'Only bot seats may remint tokens.');
     }
     const token = makeToken();
-    this.seats.set(seat, hashToken(token));
+    this.seats.set(seat, { tokenHash: hashToken(token), name: '' });
     this.hooks?.onSeatsChanged?.(this);
     return token;
   }
@@ -243,10 +275,10 @@ export class Room {
     this.hooks?.onSeatsChanged?.(this);
   }
 
-  /** Seat hashes as persisted — raw tokens never outlive the join ack. */
-  seatTokenHashes(): SeatTokenHash[] {
+  /** Seat rows as persisted — raw tokens never outlive the join ack. */
+  seatRows(): SeatRow[] {
     return [...this.seats]
-      .map(([seat, tokenHash]) => ({ seat, tokenHash }))
+      .map(([seat, identity]) => ({ seat, tokenHash: identity.tokenHash, name: identity.name }))
       .sort((a, b) => a.seat - b.seat);
   }
 

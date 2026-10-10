@@ -254,3 +254,24 @@ describe('viewFor — lobby occupancy', () => {
     expect(viewFor(lobby, null).players.every((r) => r.occupied)).toBe(true);
   });
 });
+
+describe('viewFor — seat display names', () => {
+  it('threads the caller-passed name map onto each row', () => {
+    const lobby = createGame(STANDARD);
+    const names = new Map<Seat, string>([
+      [1, '阿明'],
+      [7, '小美'],
+    ]);
+    const view = viewFor(lobby, 1, null, new Set([1, 7]), new Map(), undefined, names);
+    expect(view.players.find((r) => r.seat === 1)?.name).toBe('阿明');
+    expect(view.players.find((r) => r.seat === 7)?.name).toBe('小美');
+    // A seat with no chosen name reads as '' — the client falls back to the label.
+    expect(view.players.find((r) => r.seat === 2)?.name).toBe('');
+  });
+
+  it('reads as no names when the map is not passed', () => {
+    const lobby = createGame(STANDARD);
+    expect(viewFor(lobby, 1).players.every((r) => r.name === '')).toBe(true);
+    expect(viewFor(lobby, null).players.every((r) => r.name === '')).toBe(true);
+  });
+});

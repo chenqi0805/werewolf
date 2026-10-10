@@ -12,6 +12,7 @@ import type { ScriptedStrategy } from '../scripted';
 function row(seat: Seat, overrides: Partial<PlayerRow> = {}): PlayerRow {
   return {
     seat,
+    name: '',
     alive: true,
     hasBadge: false,
     revealedIdiot: false,

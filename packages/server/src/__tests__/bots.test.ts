@@ -1,9 +1,9 @@
-import { createGame } from '@werewolf/engine';
+import { createGame, type Seat } from '@werewolf/engine';
 import { describe, expect, it } from 'vitest';
 import { RoomError } from '../errors';
 import { BOT_NICKNAMES } from '../botNames';
 import { hashToken } from '../ids';
-import { Room } from '../room';
+import { Room, type SeatIdentity } from '../room';
 import { STANDARD, ALL_SEATS } from './fixtures';
 
 /**
@@ -104,9 +104,9 @@ describe('restored bot seats', () => {
       code: 'TEST',
       restored: {
         state,
-        seats: new Map([
-          [3, hashToken('raw3')],
-          [7, hashToken('raw7')],
+        seats: new Map<Seat, SeatIdentity>([
+          [3, { tokenHash: hashToken('raw3'), name: '' }],
+          [7, { tokenHash: hashToken('raw7'), name: '' }],
         ]),
         bots: new Set([7, 3]),
       },
@@ -123,7 +123,10 @@ describe('restored bot seats', () => {
     const state = createGame([...STANDARD]);
     const room = new Room({
       code: 'TEST',
-      restored: { state, seats: new Map([[3, 'hash3']]) },
+      restored: {
+        state,
+        seats: new Map<Seat, SeatIdentity>([[3, { tokenHash: 'hash3', name: '' }]]),
+      },
     });
     expect(room.isBotSeat(3)).toBe(false);
     expect(room.botSeats().size).toBe(0);
