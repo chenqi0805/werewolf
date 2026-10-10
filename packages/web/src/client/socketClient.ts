@@ -91,6 +91,11 @@ export function requestStrategy(socket: GameSocket): Promise<StrategyReply> {
   return callAck<StrategyReply>((ack) => socket.emit('assistant:strategy', ack));
 }
 
+/** Email a join link to a friend; the server validates, budgets, and sends. */
+export function sendInvite(socket: GameSocket, email: string): Promise<OkAck> {
+  return callAck<OkAck>((ack) => socket.emit('room:invite', email, ack));
+}
+
 /**
  * Ask for the finished room's shared 复盘; the server memoizes one
  * generation per room, so repeat and concurrent calls join the same answer.

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import type { BoardId, Seat } from '@werewolf/engine';
 
 import { AckError, createRoom, joinRoom, type GameSocket } from '../client/socketClient';
+import { roomCodeFromUrl } from '../client/invite';
 import { loadStoredName, saveStoredName } from '../client/nameCache';
 import { BOARD_OPTIONS } from '../boardOptions';
 
@@ -30,6 +31,13 @@ export function ConnectScreen({ socket, onSession }: ConnectScreenProps): JSX.El
   const [name, setName] = useState(() => loadStoredName(localStorage));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // An emailed invite lands on /?room=CODE — pre-filling the code field is
+  // the whole point: the friend is one tap from a named join (client/invite.ts).
+  useEffect(() => {
+    const fromLink = roomCodeFromUrl(window.location.search);
+    if (fromLink !== '') setCode(fromLink);
+  }, []);
 
   function describe(err: unknown): string {
     if (err instanceof AckError) return errorText[err.code] ?? `加入失败（${err.code}）`;
