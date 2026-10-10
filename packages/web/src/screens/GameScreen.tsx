@@ -19,6 +19,7 @@ import {
   DayLog,
   SeatGrid,
   SeatPicker,
+  GuardPad,
   SeerPad,
   SpectatorView,
   SpeechHistory,
@@ -34,6 +35,7 @@ import {
   canVoteNow,
   directionNeeded,
   hunterShotState,
+  guardTargets,
   nightPadKind,
   nightTargets,
   poisonTargets,
@@ -103,7 +105,7 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
   const speechKind = speechContextOf(view);
   const strategy = strategyContextOf(view);
 
-  function onPick(kind: 'kill' | 'poison' | 'check' | 'shoot') {
+  function onPick(kind: 'kill' | 'protect' | 'poison' | 'check' | 'shoot') {
     return (target: Seat) => {
       const action = actionFor(view, kind, target);
       if (action !== null) send(action);
@@ -144,6 +146,18 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
               onConfirm={(target) => send({ type: 'WOLF_KILL', actor: seat, target })}
             />
           )}
+          {step.kind === 'night' &&
+            nightKind === 'guard' &&
+            you.role === 'guard' &&
+            you.guardOptions && (
+              <GuardPad
+                self={seat}
+                options={you.guardOptions}
+                targets={guardTargets(view)}
+                onProtect={onPick('protect')}
+                onPass={() => send({ type: 'GUARD_PASS', actor: seat })}
+              />
+            )}
           {step.kind === 'night' && nightKind === 'witch' && you.role === 'witch' && (
             <WitchPad
               self={seat}

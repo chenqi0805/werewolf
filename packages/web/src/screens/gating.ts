@@ -16,7 +16,7 @@ import {
  * every gate here is unit-tested.
  */
 
-export type NightPadKind = 'wolf' | 'witch' | 'seer' | 'waiting';
+export type NightPadKind = 'wolf' | 'witch' | 'seer' | 'guard' | 'waiting';
 
 export interface VoteContext {
   actionKind: 'SHERIFF_VOTE' | 'EXILE_VOTE';
@@ -58,10 +58,23 @@ export function nightPadKind(view: PlayerView): NightPadKind {
   const step = stepOf(view);
   if (step.kind !== 'night' || view.you.seat === null || !view.you.alive) return 'waiting';
   const { role } = view.you;
+  // The wolfking board's guard wakes before the pack: while his window is
+  // pending the wire step still reads 'wolf', and only the guard may act.
+  if (step.guardPending === true) return role === 'guard' ? 'guard' : 'waiting';
   if (step.step === 'wolf' && role === 'werewolf') return 'wolf';
   if (step.step === 'witch' && role === 'witch') return 'witch';
   if (step.step === 'seer' && role === 'seer') return 'seer';
   return 'waiting';
+}
+
+/** The guard's night options, or null when this seat holds no guard window. */
+export function guardOptionsOf(view: PlayerView): GuardOptions | null {
+  return nightPadKind(view) === 'guard' ? (view.you.guardOptions ?? null) : null;
+}
+
+/** Living others offered to the guard's protection (自守 rides its own toggle). */
+export function guardTargets(view: PlayerView): SeatView[] {
+  return livingOthersOf(view);
 }
 
 /** Living non-wolf seats offered to the pack's kill vote. */
@@ -169,6 +182,14 @@ export function sheriffSignupState(view: PlayerView): SheriffSignupState {
   };
 }
 
+/** The guard's night options as projected onto his view. */
+export interface GuardOptions {
+  maySelfProtect: boolean;
+  mayPass: boolean;
+  repeatBan: boolean;
+  lastProtected: number | null;
+}
+
 /** Is the viewer's hunter shot window open, and who can be hit? */
 export function hunterShotState(view: PlayerView): HunterShotState {
   const step = stepOf(view);
@@ -208,12 +229,14 @@ export const COUNTDOWN_TICK_MS = 250;
 /** Build the action payload a pad submit should send, or null when invalid. */
 export function actionFor(
   view: PlayerView,
-  kind: 'kill' | 'heal' | 'poison' | 'check' | 'shoot',
+  kind: 'kill' | 'protect' | 'heal' | 'poison' | 'check' | 'shoot',
   target: number | null,
 ): PlayerAction | null {
   const seat = view.you.seat;
   if (seat === null || target === null) return null;
   switch (kind) {
+    case 'protect':
+      return { type: 'GUARD_PROTECT', actor: seat, target };
     case 'kill':
       return { type: 'WOLF_KILL', actor: seat, target };
     case 'heal':
