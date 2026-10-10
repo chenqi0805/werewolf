@@ -238,6 +238,14 @@ describe('day — exile vote', () => {
     const s = baseGame();
     expectGameError(s, { type: 'EXILE_VOTE', actor: 5, target: 6 }, 'PLAYER_DEAD');
   });
+
+  it('a cast ballot is final — a second vote from the same voter is rejected', () => {
+    let s = baseGame();
+    s = apply(s, { type: 'EXILE_VOTE', actor: 1, target: 6 });
+    expect(s.vote?.votes[1]).toBe(6);
+    expectGameError(s, { type: 'EXILE_VOTE', actor: 1, target: 7 }, 'ALREADY_DONE');
+    expect(s.vote?.votes[1]).toBe(6);
+  });
 });
 
 /** PK-speech helper for the void test: PROCEED through both tied slots. */

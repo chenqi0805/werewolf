@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../index';
+import { applyAction, winCheck } from '../index';
 import {
   apply,
   baseGame,
   expectGameError,
   holdElection,
+  livingWolves,
   newGame,
   nightKill,
   openDay,
@@ -14,6 +16,29 @@ import {
   voteAll,
   witchTurn,
 } from './harness';
+
+/**
+ * Days 1–3 exile wolves 1–3 (villagers knifed nights 2–3, the election voided
+ * on an empty podium); night 4 the last wolf (seat 4) knifes the hunter and
+ * dawn 4 opens his shot window — the game riding on the shot.
+ */
+function dawnShotDecides(): GameState {
+  let s = apply(newGame(), { type: 'START_GAME' });
+  s = runNight(s, { kill: null }); // night 1: 空刀
+  s = apply(s, { type: 'PROCEED' }); // empty podium voids the election
+  s = openDay(s);
+  s = voteAll(s, 'EXILE_VOTE', 1); // day 1 exiles wolf 1
+  s = runNight(s, { kill: 5 });
+  s = openDay(s);
+  s = voteAll(s, 'EXILE_VOTE', 2); // day 2 exiles wolf 2
+  s = runNight(s, { kill: 6 });
+  s = openDay(s);
+  s = voteAll(s, 'EXILE_VOTE', 3); // day 3 exiles wolf 3
+  s = runNight(s, { kill: 11 }); // night 4: the last wolf knifes the hunter
+  s = apply(s, { type: 'PROCEED' }); // dawn announce 11 → the shot window
+  expect(s.phase).toBe('hunter-shot');
+  return s;
+}
 
 /** Night 1 wolves kill the hunter; election; dawn opens his window. */
 function night1HunterDead(): GameState {
@@ -123,5 +148,20 @@ describe('hunter — cascade with the badge', () => {
     expect(P(s, 12).hasBadge).toBe(true);
     expect(P(s, 9).hasBadge).toBe(false);
     expect(s.phase).toBe('night'); // day 1 done
+  });
+});
+
+describe('hunter — a dawn shot that decides the game', () => {
+  it('shooting the last wolf during the dawn drain ends the game immediately', () => {
+    const s = dawnShotDecides();
+    const result = applyAction(s, { type: 'HUNTER_SHOOT', actor: 11, target: 4 });
+    expect(P(result.state, 4).alive).toBe(false);
+    expect(livingWolves(result.state)).toEqual([]);
+    expect(winCheck(result.state)).toBe('good');
+    expect(result.events.some((e) => e.type === 'GAME_OVER' && e.winner === 'good')).toBe(true);
+    expect(result.state.phase).toBe('game-over');
+    expect(result.state.winner).toBe('good');
+    // No further phase opens — the pre-fix bug stranded a wolfless night.
+    expectGameError(result.state, { type: 'PROCEED' }, 'WRONG_PHASE');
   });
 });
