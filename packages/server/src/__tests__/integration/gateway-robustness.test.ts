@@ -150,3 +150,106 @@ describe('timer expiry survives a persistence-hook failure (SRV-3)', () => {
     expect(errorLines.filter((l) => l.includes('timer injection failed')).length).toBe(1);
   }, 20_000);
 });
+
+describe('internal errors never leak detail to clients (F5)', () => {
+  /** A store failure whose message embeds a database path — the leak F5 closes. */
+  const STORE_FAILURE =
+    'SQLITE_CANTOPEN: unable to open database file at /var/lib/werewolf/data/werewolf.db';
+
+  /** Captures the server-side error log — the detail must land here, not on the wire. */
+  function spyConsoleError(): string[] {
+    const lines: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(' '));
+    });
+    return lines;
+  }
+
+  it('acks a store-hook failure with no filesystem or SQLite path text', async () => {
+    const dbPath = resolve(tmpdir(), `werewolf-gw-${randomUUID()}.db`);
+    dbPaths.push(dbPath);
+    const rig = await startServer(scriptTimers(), { dbPath });
+    rigs.push(rig);
+    const { client } = await connect(rig);
+
+    vi.spyOn(EventStore.prototype, 'upsertRoom').mockImplementation(() => {
+      throw new Error(STORE_FAILURE);
+    });
+    const errorLines = spyConsoleError();
+
+    const resp = await createRaw(client, { board: 'classic' });
+    // Exact shape: the ack carries the code and nothing else — no message
+    // field, no path text on the wire.
+    expect(resp).toEqual({ error: 'INTERNAL' });
+
+    // The full detail — path included — stays in the server log.
+    expect(errorLines.some((l) => l.includes(STORE_FAILURE))).toBe(true);
+  }, 10_000);
+
+  it('reduces an unexpected throw on a legal game action to the generic game:error payload', async () => {
+    const dbPath = resolve(tmpdir(), `werewolf-gw-${randomUUID()}.db`);
+    dbPaths.push(dbPath);
+    // Hold the night:wolf step open so no expiry can race the action.
+    const rig = await startServer({ ...scriptTimers(), 'night:wolf': 60_000 }, { dbPath });
+    rigs.push(rig);
+
+    const { client: creator, rec: creatorRec } = await connect(rig);
+    const created = await createRoom(creator);
+    const seats = await connectAll(rig, 11);
+    for (const s of seats) await joinRoom(s.client, created.roomCode);
+    await startRoom(creator);
+
+    // The deal is random: discover a wolf from the dealt views.
+    const recs = [creatorRec, ...seats.map((s) => s.rec)];
+    await waitFor(() => recs.every((r) => r.latest?.you.role));
+    const wolfRec = recs.find((r) => r.latest?.you.role === 'werewolf');
+    const wolfView = wolfRec?.latest;
+    if (!wolfRec || !wolfView?.you.seat || !wolfView.you.wolfPack) {
+      throw new Error('no wolf dealt on the standard board');
+    }
+    const pack = new Set(wolfView.you.wolfPack);
+    const target = wolfView.players.find((p) => p.alive && !pack.has(p.seat))?.seat;
+    if (target === undefined) throw new Error('no living non-wolf target');
+
+    // The hook throws only on player-source appends: starts and timer
+    // injections pass through, so no clock can race the assertion.
+    const realAppend = EventStore.prototype.appendAction;
+    type AppendRow = Parameters<typeof realAppend>[0];
+    vi.spyOn(EventStore.prototype, 'appendAction').mockImplementation(function (
+      this: EventStore,
+      row: AppendRow,
+    ) {
+      if (row.source === 'player') throw new Error(STORE_FAILURE);
+      realAppend.call(this, row);
+    });
+    const errorLines = spyConsoleError();
+
+    // A legal wolf vote reaches the hook and fails there — past the engine,
+    // exactly the path that echoed the raw message before the fix.
+    const wolfIndex = recs.indexOf(wolfRec);
+    const wolfClient = wolfRec === creatorRec ? creator : seats[wolfIndex - 1]?.client;
+    if (!wolfClient) throw new Error('wolf client missing from the table');
+    wolfClient.emit('game:action', { type: 'WOLF_KILL', actor: wolfView.you.seat, target });
+    await waitFor(() => wolfRec.errors.length > 0);
+
+    // The full payload is the generic one — no engine text, no path text.
+    expect(wolfRec.errors).toEqual([{ code: 'INTERNAL', message: 'Internal error' }]);
+    expect(errorLines.some((l) => l.includes(STORE_FAILURE))).toBe(true);
+  }, 10_000);
+
+  it('passes domain errors through with their real code and message', async () => {
+    const rig = await startServer(scriptTimers());
+    rigs.push(rig);
+    const { client, rec } = await connect(rig);
+    await createRoom(client);
+
+    // An exile vote in the lobby is a stable engine rejection — its curated
+    // code and message must survive errorPayload untouched.
+    client.emit('game:action', { type: 'EXILE_VOTE', actor: 1, target: 2 });
+    await waitFor(() => rec.errors.length > 0);
+    expect(rec.errors[0]).toEqual({
+      code: 'WRONG_PHASE',
+      message: 'No exile vote is in progress.',
+    });
+  }, 10_000);
+});
