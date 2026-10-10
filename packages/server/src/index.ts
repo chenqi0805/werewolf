@@ -60,6 +60,7 @@ export {
   createApp,
   type Ack,
   type AppHandle,
+  type AppOptions,
   type CorsPolicy,
   type GatewayOptions,
   type TimerOverrides,
