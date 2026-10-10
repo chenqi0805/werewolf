@@ -154,7 +154,7 @@ function handleProceed(state: GameState, events: GameEvent[]): void {
       advanceSpeech(state);
       return;
     case 'pk-speech':
-      advancePkSpeech(state);
+      advancePkSpeech(state, events);
       return;
     default:
       throw new GameError('WRONG_PHASE', `Nothing to proceed past in phase ${state.phase}.`);

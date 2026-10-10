@@ -181,6 +181,37 @@ describe('day — exile vote', () => {
     expect(s.log.some((e) => e.type === 'PLAYER_EXILED' && e.seat === 6)).toBe(true);
   });
 
+  it('a tie covering every voter ends the day — the revote would be vacuous', () => {
+    // Badgeless table: the sheriff election voids on zero signups, so every
+    // vote weighs 1 and a full cycle can tie the entire electorate.
+    let s = apply(newGame(), { type: 'START_GAME' });
+    s = runNight(s, { kill: 5, check: 1 });
+    s = apply(s, { type: 'PROCEED' }); // closes signup with an empty podium — no sheriff
+    s = openDay(s);
+    expect(s.phase).toBe('exile-vote');
+    const electorate = s.vote?.electorate ?? [];
+    expect(electorate).toHaveLength(11);
+    // Everyone votes themselves: an 11-way tie whose tied set is every voter.
+    for (const v of electorate) {
+      s = apply(s, { type: 'EXILE_VOTE', actor: v, target: v });
+    }
+    expect(s.phase).toBe('pk-speech');
+    expect(s.pk?.tied).toHaveLength(11);
+    for (const tied of s.pk?.tied ?? []) {
+      s = apply(s, { type: 'SPEAK', actor: tied, text: 'pk speech' });
+      s = apply(s, { type: 'PROCEED' });
+    }
+    // The revote has no eligible voters — the day must end, not freeze.
+    expect(s.phase).toBe('night');
+    expect(s.vote).toBeNull();
+    // Nobody was exiled: the night kill is the only death.
+    expect(
+      Object.values(s.players)
+        .filter((p) => !p.alive)
+        .map((p) => p.seat),
+    ).toEqual([5]);
+  });
+
   it('a second exile tie voids the day — no one is removed', () => {
     let s = baseGame();
     for (const [actor, target] of [

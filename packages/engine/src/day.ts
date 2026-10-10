@@ -240,13 +240,22 @@ function resolveExileTarget(state: GameState, seat: Seat, events: GameEvent[]): 
 
 // — PK speeches and revote ——————————————————————————————————————————————
 
-export function advancePkSpeech(state: GameState): void {
+export function advancePkSpeech(state: GameState, events: GameEvent[]): void {
   if (state.phase !== 'pk-speech' || !state.pk) {
     throw new GameError('WRONG_PHASE', 'No PK speech is in progress.');
   }
   const pk = state.pk;
   pk.cursor += 1;
   if (pk.cursor < pk.tied.length) return;
+  // A revote whose electorate is empty is vacuous: the tied players abstain
+  // by rule, so when they are every voter nobody can cast a legal vote and
+  // no timer default can advance the phase — the room would freeze. The tie
+  // stands; the day ends with no exile, like any revote tie.
+  if (pk.electorate.length === 0) {
+    state.pk = null;
+    enterNight(state, events);
+    return;
+  }
   state.vote = { kind: pk.kind, votes: {}, electorate: pk.electorate, revote: true };
   state.pk = null;
   state.phase = 'pk-vote';
