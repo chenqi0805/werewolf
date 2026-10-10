@@ -151,6 +151,67 @@ export function botMixPlan(): PlayPlan {
   };
 }
 
+/**
+ * E — 竞选局: one human host sits with eleven scripted bots, and the dealt
+ * seer runs for sheriff — a scripted seer signs up by itself, and if the
+ * host holds the seer the plan raises her hand instead. The 警下 bots back
+ * the lowest candidate, so the election lands deterministically. The first
+ * knife is saved (the scripted witch does the same) so the seer always
+ * survives to her podium, and her own exile ballot votes so the public
+ * tally carries the sheriff's 1.5-weight vote.
+ */
+export function electionPlan(roles: Map<Seat, Role>): PlayPlan {
+  const seer = [...roles.entries()].find(([, role]) => role === 'seer')?.[0];
+  return {
+    wolfKill: (_day, targets) => targets[0] ?? null,
+    witch: (day, victim) => (day === 1 && victim !== null ? { kind: 'heal' } : { kind: 'pass' }),
+    seerCheck: (_day, targets) => targets[0] ?? fail('seer has no unchecked target'),
+    sheriffCandidates: seer === undefined ? [] : [seer],
+    speech: () => '过',
+    sheriffVote: () => null, // the host abstains; the scripted 警下 elect the seer
+    exileVote: (seat, _day, candidates) =>
+      seer !== undefined && seat === seer ? (candidates[0] ?? null) : null,
+    hunterShot: () => null,
+    badgePass: () => null,
+  };
+}
+
+/**
+ * F/G — 自爆局 (day 1 / day 2 variants): an all-human classic table where
+ * the lowest wolf 自爆s in the plan's day's window and the whole table holds
+ * fire — no candidates, no exile votes, so every other phase resolves by
+ * clock or by the engine's void path. The pack knifes the lowest living
+ * villager every night; the day-1 variant's witch poisons a second villager
+ * on night 1 so the explosion's release has two buffered deaths to announce
+ * one by one. The game ends on the villagers' 屠边.
+ */
+export function explodePlan(roles: Map<Seat, Role>, explodeDay: number): PlayPlan {
+  const ofRole = (targets: number[], role: Role): number[] =>
+    targets.filter((seat) => roles.get(seat) === role);
+  const exploder =
+    ofRole(
+      [...roles.keys()].sort((a, b) => a - b),
+      'werewolf',
+    )[0] ?? fail('explode scenario needs a plain wolf');
+  return {
+    wolfKill: (_day, targets) => ofRole(targets, 'villager')[0] ?? fail('no villager to knife'),
+    witch: (day, victim, targets) => {
+      // Day 1 variant only: the poison buys a second buffered death for the
+      // one-by-one release. The day-2 control keeps the witch empty-handed.
+      if (explodeDay !== 1 || day !== 1) return { kind: 'pass' };
+      const poison = targets.find((seat) => roles.get(seat) === 'villager' && seat !== victim);
+      return poison === undefined ? { kind: 'pass' } : { kind: 'poison', target: poison };
+    },
+    seerCheck: (_day, targets) => targets[0] ?? fail('seer has no unchecked target'),
+    sheriffCandidates: [],
+    explode: (day, seat) => day === explodeDay && seat === exploder,
+    speech: () => '过',
+    exileVote: () => null,
+    hunterShot: () => null,
+    badgePass: () => null,
+  };
+}
+
 function fail(why: string): number {
   throw new Error(`plan dead-end: ${why}`);
 }

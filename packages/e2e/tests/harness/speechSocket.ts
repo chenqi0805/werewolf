@@ -93,6 +93,25 @@ export async function speakViaSocket(seat: Seat, page: Page, text: string): Prom
   return true;
 }
 
+/** Which ballot a seat's own view is showing: the badge ballot or the exile ballot. */
+export type BallotKind = 'sheriff' | 'exile';
+
+/**
+ * The ballot kind the seat's live filtered view carries — the same read the
+ * client's `voteContextOf` gates on. The vote pad renders identically for
+ * both ballots (the kind only swaps the wire action), so the driver asks the
+ * view instead of the DOM. Null until the seat's first view lands; the
+ * driver retries on its next tick.
+ */
+export async function ballotKindViaSocket(seat: Seat, page: Page): Promise<BallotKind | null> {
+  await ensureSeatSocket(seat, page);
+  const step = views.get(seat)?.step;
+  if (step === undefined) return null;
+  if (step.kind === 'sheriff-vote') return 'sheriff';
+  if (step.kind === 'exile-vote') return 'exile';
+  return step.kind === 'pk-vote' ? step.voteKind : null;
+}
+
 /**
  * Opens (or returns) the seat's rider socket for callers that attach their own
  * handlers — the voice scenario listens for relayed `voice:chunk`s and public

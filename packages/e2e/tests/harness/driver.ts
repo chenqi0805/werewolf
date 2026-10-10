@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import type { Seat } from '@werewolf/engine';
 
 import { SELECTORS, WINNER_LABELS, dayOfTitle, seatOfChipLabel } from './labels';
-import { speakViaSocket } from './speechSocket';
+import { ballotKindViaSocket, speakViaSocket } from './speechSocket';
 import type { SeatPage, Table } from './table';
 
 /** The witch's turn: heal tonight's victim, poison someone, or pass. */
@@ -20,6 +20,8 @@ export interface PlayPlan {
   seerCheck(day: number, targets: number[]): number;
   /** Seats that 上警 on day 1. */
   sheriffCandidates: readonly Seat[];
+  /** The sheriff ballot for an elector; null = 弃票. Defaults to the exile ballot's answer. */
+  sheriffVote?(seat: Seat, day: number, candidates: number[]): number | null;
   /** Text posted when the seat's speech slot opens. */
   speech(seat: Seat, day: number): string;
   /** Exile ballot for a voter; null = 弃票. */
@@ -32,6 +34,8 @@ export interface PlayPlan {
   guardProtect?(day: number, targets: number[], banned: number | null): number | null;
   /** The 白狼王's destruct target; null = holds fire. */
   destruct?(day: number, targets: number[]): number | null;
+  /** True when this wolf 自爆s in the window open on this day — an irreversible confirm flow. */
+  explode?(day: number, seat: Seat): boolean;
 }
 
 export interface PlayOptions {
@@ -91,6 +95,10 @@ async function driveSeat(seat: SeatPage, plan: PlayPlan, acted: Set<string>): Pr
   if (await driveGuard(seat, plan, acted, day)) return;
   if (await driveWitch(seat, plan, acted, day)) return;
   if (await driveSeer(seat, plan, acted, day)) return;
+  // Explode sits ahead of signup: the signup driver claims every seat the
+  // moment the 上警 button is up, which would mask the wolf's window for the
+  // whole signup phase — the sharpest 自爆 beat there is.
+  if (await driveExplode(seat, plan, acted, day)) return;
   if (await driveSignup(seat, plan, acted, day)) return;
   if (await driveDirection(seat, acted, day)) return;
   // Destruct sits ahead of the speech driver: the speech panel returns true
@@ -263,13 +271,19 @@ async function driveVote(
   const abstain = pad.locator('button', { hasText: '弃票' });
   if (!(await abstain.isVisible())) return true; // the no-vote-rights block, not a ballot
 
+  // The pad renders identically for both ballots — the kind only swaps the
+  // wire action — so the seat's own filtered view says which ballot this is.
+  const ballot = await ballotKindViaSocket(seat.seat, seat.page);
+  if (ballot === null) return true; // view not landed yet — retried next tick
+
   const candidates = await pickerTargets(pad);
-  // Fingerprint includes the candidate set: a PK revote the same day offers
-  // fewer chips and is a fresh ballot.
-  const fingerprint = `vote|${seat.seat}|${day}|${candidates.join(',')}`;
+  // Fingerprint includes the ballot kind and the candidate set: a PK revote
+  // the same day offers fewer chips and is a fresh ballot.
+  const fingerprint = `vote|${ballot}|${seat.seat}|${day}|${candidates.join(',')}`;
   if (acted.has(fingerprint)) return true;
 
-  const target = plan.exileVote(seat.seat, day, candidates);
+  const decide = ballot === 'sheriff' ? (plan.sheriffVote ?? plan.exileVote) : plan.exileVote;
+  const target = decide(seat.seat, day, candidates);
   let done: boolean;
   if (target === null) {
     done = await softClick(abstain);
@@ -351,6 +365,36 @@ async function driveDestruct(
   }
   if (!(await softClick(chipFor(section, target)))) return true;
   if (await softClick(section.locator('button', { hasText: '确认自爆并带走' }))) {
+    acted.add(fingerprint);
+  }
+  return true;
+}
+
+/**
+ * Plain-wolf 自爆: arm the flow, then confirm on a later tick — the control
+ * mirrors the 白狼王's two-step destruct minus the target pick. A wolf the
+ * plan tells to hold fire returns false so the drivers below it (signup,
+ * speech) still run: its control being visible must not mask the seat's
+ * other windows.
+ */
+async function driveExplode(
+  seat: SeatPage,
+  plan: PlayPlan,
+  acted: Set<string>,
+  day: number,
+): Promise<boolean> {
+  const section = seat.page.locator(SELECTORS.explodeControl);
+  if (!(await section.isVisible())) return false;
+  if (!plan.explode?.(day, seat.seat)) return false;
+  const fingerprint = `explode|${seat.seat}|${day}`;
+  if (acted.has(fingerprint)) return true;
+
+  const arm = section.locator('button:text-is("自爆")');
+  if (await arm.count()) {
+    await softClick(arm);
+    return true;
+  }
+  if (await softClick(section.locator('button', { hasText: '确认自爆' }))) {
     acted.add(fingerprint);
   }
   return true;

@@ -14,8 +14,10 @@ export async function revealFates(page: Page): Promise<Map<number, Fate>> {
   const count = await rows.count();
   for (let index = 0; index < count; index += 1) {
     const text = (await rows.nth(index).textContent()) ?? '';
+    // The sheriff's row appends a 警徽 marker after the fate — decoration,
+    // not fate; tolerate it so every dealt seat parses.
     const match = text.match(
-      /^(\d+)号(?:狼人|白狼王|村民|预言家|女巫|猎人|守卫|白痴)(存活|出局)$/u,
+      /^(\d+)号(?:狼人|白狼王|村民|预言家|女巫|猎人|守卫|白痴)(存活|出局)(?:警徽)?$/u,
     );
     if (match) fates.set(Number(match[1]), match[2] as Fate);
   }
