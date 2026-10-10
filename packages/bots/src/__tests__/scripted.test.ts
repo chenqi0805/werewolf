@@ -130,6 +130,18 @@ describe('scripted strategy: night', () => {
     expect(await decide(night2)).toEqual({ action: { type: 'WITCH_PASS', actor: 5 } });
   });
 
+  it('declines a foreign sub-step view - killTarget rides only her own step', async () => {
+    // The wolf sub-step's broadcast omits killTarget (the field is step-
+    // gated). A WITCH_PASS decided there could land after her step opened
+    // and burn the turn the heal needed - she must wait to be re-asked.
+    const foreign = view({
+      dayNumber: 1,
+      you: you(5, 'witch', { witchPotions: { healUsed: false, poisonUsed: false } }),
+      step: { kind: 'night', step: 'wolf' },
+    });
+    expect(await decide(foreign)).toBeNull();
+  });
+
   it('seer checks the lowest unchecked seat and passes once all are seen', async () => {
     const base = { you: you(3, 'seer'), step: { kind: 'night', step: 'seer' } as const };
     const first = view({ ...base, players: [row(1, { alive: false }), row(2), row(3), row(4)] });

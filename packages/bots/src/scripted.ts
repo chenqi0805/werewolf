@@ -109,8 +109,13 @@ export class ScriptedStrategy implements BotStrategy {
   private witchDecision(view: PlayerViewOf, actor: Seat): BotDecision | null {
     const potions = view.you.witchPotions;
     if (potions === undefined) return null;
+    // killTarget rides the view only while her own night step is open; a
+    // wolf-sub-step broadcast omits it. Deciding there emitted a stale
+    // WITCH_PASS that could land after her step opened and burn the turn
+    // the heal needed — decline and let the step's own view re-ask.
+    if (potions.killTarget === undefined) return null;
     const savesFirstKnife =
-      view.dayNumber === 1 && !potions.healUsed && (potions.killTarget ?? null) !== null;
+      view.dayNumber === 1 && !potions.healUsed && potions.killTarget !== null;
     if (savesFirstKnife) return { action: { type: 'WITCH_HEAL', actor } };
     return { action: { type: 'WITCH_PASS', actor } };
   }
