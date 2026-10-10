@@ -293,7 +293,12 @@ async function textFromStreamingCompletion(response: Response): Promise<string |
         buffered = buffered.slice(nl + 1);
         if (!line.startsWith('data:')) continue;
         const payload = line.slice(5).trim();
-        if (payload === '[DONE]') continue;
+        if (payload === '[DONE]') {
+          // The OpenAI-compat stream's terminal frame. The transport can keep
+          // the socket open (HTTP keep-alive), so end on the protocol marker
+          // instead of waiting for the body to close.
+          return text.length > 0 ? text : null;
+        }
         try {
           const parsed = JSON.parse(payload) as {
             choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
