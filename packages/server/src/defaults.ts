@@ -106,9 +106,10 @@ export function clockKey(state: GameState): string | null {
 
 /** Default pacing per clock key. Tests override these with milliseconds. */
 export const DEFAULT_TIMERS: Record<string, number> = {
-  'night:wolf': 30_000,
-  'night:witch': 30_000,
-  'night:seer': 25_000,
+  // Night windows run somewhat longer — per-player deliberation needs room.
+  'night:wolf': 60_000,
+  'night:witch': 60_000,
+  'night:seer': 45_000,
   'sheriff-signup': 20_000,
   'sheriff-speech': 45_000,
   'sheriff-vote': 30_000,
