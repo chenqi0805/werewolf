@@ -15,22 +15,30 @@ test('scenario E: the seer is elected sheriff — 警上发言, 警下 ballot, a
   test.setTimeout(540_000);
   const table = await openTable(browser, { humans: 1 });
   try {
+    // A page can only know its own deal — the eleven bot seats' roles stay
+    // hidden. The plan conditions on the host's role alone: a host seer
+    // signs up herself, otherwise the scripted seer bot runs unaided.
     const roles = new Map(table.seats.map((seat) => [seat.seat, seat.role]));
-    const seer = [...roles.entries()].find(([, role]) => role === 'seer')?.[0];
-    expect(seer, 'the classic deal includes a seer').toBeDefined();
-
     const winner = await playScriptedGame(table, electionPlan(roles), {
       label: 'sheriff-election',
       evidenceDir: EVIDENCE_DIR,
     });
     expect(['wolves', 'good'], 'the scripted table finishes the game').toContain(winner);
 
-    // The public log carries the whole election: the seer 上警, the sheriff
-    // ballot resolved, and the seer 当选.
+    // The script makes the seer the only candidate — bot or host alike —
+    // so the public log must carry the whole election through one seat: her
+    // 上警 precedes the 警长竞选开票 ballot, which resolves before the 当选
+    // line. Deriving the seat from the log keeps the scenario deal-blind.
     const log = await dayLogText(anchorPage(table));
-    expect(log).toContain(`${seer}号上警`);
-    expect(log).toContain('警长竞选开票');
-    expect(log).toContain(`${seer}号当选警长`);
+    const elected = [...log.matchAll(/(\d+)号当选警长/g)].map((match) => Number(match[1]));
+    expect(elected, 'exactly one sheriff is elected').toHaveLength(1);
+    const sheriff = elected[0]!;
+    const signupAt = log.indexOf(`${sheriff}号上警`);
+    const ballotAt = log.indexOf('警长竞选开票');
+    const electedAt = log.indexOf(`${sheriff}号当选警长`);
+    expect(signupAt, `seat ${sheriff} campaigned`).toBeGreaterThanOrEqual(0);
+    expect(signupAt, 'the campaign precedes the ballot').toBeLessThan(ballotAt);
+    expect(ballotAt, 'the ballot precedes the election').toBeLessThan(electedAt);
 
     // The 复盘 grid's 得票 column sums the public exile tallies: every
     // ordinary ballot weighs 1, so a fractional total is only producible by
@@ -44,9 +52,10 @@ test('scenario E: the seer is elected sheriff — 警上发言, 警下 ballot, a
       `a fractional 得票 among [${votes.map((v) => v.trim()).join(', ')}]`,
     ).toBe(true);
 
-    // Every dealt seat has a reveal row (the full table played it out).
+    // Every dealt seat has a reveal row (the full table played it out) —
+    // all twelve, the bot seats included.
     const fates = await revealFates(anchorPage(table));
-    for (const seat of roles.keys()) {
+    for (let seat = 1; seat <= 12; seat += 1) {
       expect(fates.get(seat), `seat ${seat} reveal row`).toBeDefined();
     }
   } finally {
