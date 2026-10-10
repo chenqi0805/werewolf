@@ -171,7 +171,12 @@ export function attachGateway(
   opts?: GatewayOptions,
   store?: EventStore,
   botManager?: BotManager,
-): { dispose(): void; rearmRestored(room: Room, timer: TimerRowRaw | null): void } {
+): {
+  dispose(): void;
+  rearmRestored(room: Room, timer: TimerRowRaw | null): void;
+  /** The relay/buffer hub — surfaced on the app handle for integration tests. */
+  voiceHub: VoiceHub;
+} {
   const timers: Record<string, number> = { ...DEFAULT_TIMERS, ...opts?.timers };
   const roomSockets = new Map<string, Set<GatewaySocket>>();
   const roomTimers = new Map<string, NodeJS.Timeout>();
@@ -273,6 +278,10 @@ export function attachGateway(
     if (key === null) {
       deadlines.delete(room.code);
       store?.clearTimer(room.code);
+      // No clock ever runs again in this state (lobby, game-over), so no
+      // expiry would consume a lingering speech buffer — drop it with the
+      // clock. Audio never outlives its slot.
+      voiceHub.dropRoom(room.code);
       return;
     }
     const ms = timers[key];
@@ -347,6 +356,9 @@ export function attachGateway(
     try {
       const slot: SpeechSlot | null = currentSpeechSlot(room.state);
       if (slot === null || !voiceHub.fallbackArmed()) {
+        // A closed slot must not outlive its audio: whatever a finished slot
+        // buffered is dropped here — no later expiry would ever consume it.
+        if (slot === null) voiceHub.dropRoom(room.code);
         finishExpiry(room);
         return;
       }
@@ -602,6 +614,9 @@ export function attachGateway(
       voiceHub.dropAll();
     },
     rearmRestored,
+    // Test seam: the app handle exposes the hub so integration tests can
+    // observe buffer lifecycles end to end.
+    voiceHub,
   };
 }
 
@@ -627,6 +642,8 @@ export interface AppHandle {
   httpServer: HttpServer;
   /** Custodian of the loopback runners for every bot seat. */
   botManager: BotManager;
+  /** Voice relay + STT buffer hub — integration tests read buffer lifecycles. */
+  voiceHub: VoiceHub;
   close(): Promise<void>;
 }
 
@@ -679,6 +696,7 @@ export function createApp(opts?: AppOptions): AppHandle {
     registry,
     httpServer,
     botManager,
+    voiceHub: gateway.voiceHub,
     async close() {
       botManager.retireAll();
       gateway.dispose();
