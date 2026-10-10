@@ -190,6 +190,29 @@ export interface GuardOptions {
   lastProtected: number | null;
 }
 
+/** The 白狼王's self-destruct window state. */
+export interface DestructState {
+  active: boolean;
+  targets: SeatView[];
+}
+
+/**
+ * The 白狼王 self-destructs during the day's speech rounds (living) or at his
+ * own exile settlement — the same interrupt phase a dying hunter's shot gets.
+ * Used up, wrong seat, or wrong phase: never active.
+ */
+export function destructState(view: PlayerView): DestructState {
+  const step = stepOf(view);
+  const { seat, alive, role, destructUsed } = view.you;
+  if (seat === null || role !== 'white_wolf_king' || destructUsed) {
+    return { active: false, targets: [] };
+  }
+  const settlement = step.kind === 'hunter-shot' && step.seat === seat;
+  const speaking = (step.kind === 'speech' || step.kind === 'pk-speech') && alive;
+  if (!settlement && !speaking) return { active: false, targets: [] };
+  return { active: true, targets: livingOthersOf(view) };
+}
+
 /** Is the viewer's hunter shot window open, and who can be hit? */
 export function hunterShotState(view: PlayerView): HunterShotState {
   const step = stepOf(view);
@@ -229,7 +252,7 @@ export const COUNTDOWN_TICK_MS = 250;
 /** Build the action payload a pad submit should send, or null when invalid. */
 export function actionFor(
   view: PlayerView,
-  kind: 'kill' | 'protect' | 'heal' | 'poison' | 'check' | 'shoot',
+  kind: 'kill' | 'protect' | 'heal' | 'poison' | 'check' | 'shoot' | 'destruct',
   target: number | null,
 ): PlayerAction | null {
   const seat = view.you.seat;
@@ -237,6 +260,8 @@ export function actionFor(
   switch (kind) {
     case 'protect':
       return { type: 'GUARD_PROTECT', actor: seat, target };
+    case 'destruct':
+      return { type: 'WOLF_KING_DESTRUCT', actor: seat, target };
     case 'kill':
       return { type: 'WOLF_KILL', actor: seat, target };
     case 'heal':

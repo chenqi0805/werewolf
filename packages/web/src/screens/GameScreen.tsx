@@ -19,6 +19,7 @@ import {
   DayLog,
   SeatGrid,
   SeatPicker,
+  DestructControl,
   GuardPad,
   SeerPad,
   SpectatorView,
@@ -36,6 +37,7 @@ import {
   directionNeeded,
   hunterShotState,
   guardTargets,
+  destructState,
   nightPadKind,
   nightTargets,
   poisonTargets,
@@ -101,11 +103,12 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
   const nightKind = nightPadKind(view);
   const signup = sheriffSignupState(view);
   const shot = hunterShotState(view);
+  const destruct = destructState(view);
   const votes = voteContextOf(view);
   const speechKind = speechContextOf(view);
   const strategy = strategyContextOf(view);
 
-  function onPick(kind: 'kill' | 'protect' | 'poison' | 'check' | 'shoot') {
+  function onPick(kind: 'kill' | 'protect' | 'poison' | 'check' | 'shoot' | 'destruct') {
     return (target: Seat) => {
       const action = actionFor(view, kind, target);
       if (action !== null) send(action);
@@ -269,9 +272,13 @@ export function GameScreen({ view, roomCode, send, socket }: GameScreenProps): J
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : destruct.active ? null : (
               <Waiting note="猎人技能发动中…" />
             ))}
+
+          {destruct.active && (
+            <DestructControl targets={destruct.targets} onDestruct={onPick('destruct')} />
+          )}
 
           {step.kind === 'badge-pass' && (
             <div>

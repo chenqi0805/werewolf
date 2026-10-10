@@ -8,6 +8,7 @@ import {
   canVoteNow,
   directionNeeded,
   formatCountdown,
+  destructState,
   guardOptionsOf,
   guardTargets,
   hunterShotState,
@@ -143,6 +144,52 @@ describe('target selectors', () => {
       players: [row(1), row(2), row(3), row(4, { alive: false })],
     });
     expect(seerTargets(seerView).map((t) => t.seat)).toEqual([1]); // self and checked seats excluded
+  });
+});
+
+describe('destructState', () => {
+  const kingView = (step: PlayerView['step'], overrides: Partial<PlayerView['you']> = {}) =>
+    view({
+      step,
+      you: you({ role: 'white_wolf_king', seat: 4, ...overrides }),
+      players: [row(1), row(2), row(3, { alive: false }), row(4), row(5)],
+    });
+
+  it('opens for a living king during the day speech rounds', () => {
+    expect(destructState(kingView({ kind: 'speech', order: [4, 5], cursor: 0 })).active).toBe(true);
+    expect(destructState(kingView({ kind: 'pk-speech', tied: [4, 5], cursor: 0 })).active).toBe(
+      true,
+    );
+    const state = destructState(kingView({ kind: 'speech', order: [5], cursor: 0 }));
+    expect(state.targets.map((t) => t.seat)).toEqual([1, 2, 5]); // living others only
+  });
+
+  it('opens at the dead king’s own exile settlement', () => {
+    const settlement: PlayerView['step'] = { kind: 'hunter-shot', seat: 4 };
+    expect(destructState(kingView(settlement, { alive: false })).active).toBe(true);
+    // Another seat's shot window is not his.
+    expect(destructState(kingView({ kind: 'hunter-shot', seat: 8 }, { alive: false })).active).toBe(
+      false,
+    );
+  });
+
+  it('stays shut outside his windows, once used, and for other roles', () => {
+    expect(destructState(kingView({ kind: 'night', step: 'wolf' })).active).toBe(false);
+    expect(
+      destructState(kingView({ kind: 'speech', order: [4], cursor: 0 }, { destructUsed: true }))
+        .active,
+    ).toBe(false);
+    expect(destructState(view({ you: you({ role: 'werewolf', seat: 4 }) })).active).toBe(false);
+    expect(destructState(view({ you: you({ role: 'hunter', seat: 4 }) })).active).toBe(false);
+  });
+
+  it('builds the destruct action', () => {
+    const king = kingView({ kind: 'speech', order: [4], cursor: 0 });
+    expect(actionFor(king, 'destruct', 7)).toEqual({
+      type: 'WOLF_KING_DESTRUCT',
+      actor: 4,
+      target: 7,
+    });
   });
 });
 

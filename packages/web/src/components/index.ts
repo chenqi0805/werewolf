@@ -12,6 +12,8 @@ export { WitchPad } from './WitchPad/WitchPad';
 export type { WitchPadProps } from './WitchPad/WitchPad';
 export { SeerPad } from './SeerPad/SeerPad';
 export type { SeerPadProps } from './SeerPad/SeerPad';
+export { DestructControl } from './DestructControl/DestructControl';
+export type { DestructControlProps } from './DestructControl/DestructControl';
 export { GuardPad } from './GuardPad/GuardPad';
 export type { GuardPadProps, GuardPadOptions } from './GuardPad/GuardPad';
 export { SpeechPanel } from './SpeechPanel/SpeechPanel';
