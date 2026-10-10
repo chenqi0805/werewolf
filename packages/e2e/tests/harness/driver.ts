@@ -138,7 +138,7 @@ async function driveGuard(
   const targets = await pickerTargets(pad);
   const bannedChips = await pad.locator('button[aria-pressed][disabled]').all();
   const banned = bannedChips.length
-    ? (seatOfChipLabel(await bannedChips[0]?.getAttribute('aria-label') ?? null) ?? null)
+    ? (seatOfChipLabel((await bannedChips[0]?.getAttribute('aria-label')) ?? null) ?? null)
     : null;
 
   const target = plan.guardProtect?.(day, targets, banned) ?? null;

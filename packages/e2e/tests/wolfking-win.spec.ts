@@ -49,9 +49,7 @@ test('scenario C: 预女猎守 — guard save, 白狼王 destruct, taken hunter 
       expect(fates.get(seat), `surviving villager ${seat}`).toBe('存活');
     }
     for (const seat of [...roles.entries()].filter(([, role]) => role === 'guard')) {
-      expect(fates.get(seat[0]), 'the guard survives — the knife never comes for him').toBe(
-        '存活',
-      );
+      expect(fates.get(seat[0]), 'the guard survives — the knife never comes for him').toBe('存活');
     }
   } finally {
     await table.close();
