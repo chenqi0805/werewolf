@@ -10,7 +10,7 @@ const port = process.env.WEREWOLF_E2E_PORT ?? '3100';
 
 export default defineConfig({
   testDir: './tests',
-  timeout: externalBaseURL ? 900_000 : 300_000,
+  timeout: externalBaseURL ? 900_000 : 600_000,
   expect: { timeout: 20_000 },
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,

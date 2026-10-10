@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { playScriptedGame } from './harness/driver';
 import { goodWinPlan } from './harness/plans';
-import { dayLogText, revealFates } from './harness/reveal';
+import { dayLogText, expectPostgameSection, revealFates } from './harness/reveal';
 import { openTable, anchorPage } from './harness/table';
 
 /** Evidence directory for game-over screenshots (CI artifact / QA upload). */
@@ -37,6 +37,10 @@ test('scenario B: 12 seats play to a good win through an idiot reveal and a hunt
     expect(log).toContain('是白痴，失去投票权');
     expect(log).toContain('猎人开枪带走了');
     expect(log).toContain('好人阵营胜利');
+
+    // Same 复盘 assertions as scenario A: the stats grid always, the 未配置
+    // click path wherever the suite runs without an assistant provider.
+    await expectPostgameSection(anchorPage(table));
   } finally {
     await table.close();
   }

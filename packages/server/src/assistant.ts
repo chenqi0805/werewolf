@@ -2,6 +2,7 @@ import type { GameEvent, Role, Seat } from '@werewolf/engine';
 import type { RoomRegistry } from './room';
 import { currentSpeechSlot, type SpeechContext, type SpeechSlot } from './voice';
 import { viewFor, type PlayerView } from './view';
+import { Agent } from 'undici';
 
 /**
  * The AI speech-strategy assistant — an opt-in proxy, never a player.
@@ -21,6 +22,34 @@ import { viewFor, type PlayerView } from './view';
  *  3. Neither — every request acks ASSISTANT_UNAVAILABLE; the panel shows
  *     未配置 and nothing else happens.
  */
+
+// CPU-backed local LLM endpoints (e.g. Ollama qwen3:8b on 2 cores) regularly
+// need more than undici's 300 s default headersTimeout before the first
+// response bytes arrive — observed as `UND_ERR_HEADERS_TIMEOUT` aborting the
+// hosted 复盘 generation. Provider calls therefore carry a 15-minute
+// dispatcher timeout. This still routes through the global fetch (so tests
+// can stub it); Node's fetch honors the undici `dispatcher` option.
+export const PROVIDER_TIMEOUT_MS = 900_000;
+const providerAgent = new Agent({
+  headersTimeout: PROVIDER_TIMEOUT_MS,
+  bodyTimeout: PROVIDER_TIMEOUT_MS,
+});
+// The lambda is structurally compatible with global fetch but its init
+// carries the undici-only `dispatcher` field, so one cast keeps
+// `fetchImpl: typeof fetch` honest. Parameter types come from the global
+// fetch itself — the server has no DOM lib, so RequestInfo does not exist
+// here.
+export const defaultProviderFetch = (async (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+) => {
+  // Node's fetch reads the undici `dispatcher` option at runtime even though
+  // the type doesn't declare it — hence the intersection cast.
+  const providerInit = { ...init, dispatcher: providerAgent } as Parameters<typeof fetch>[1] & {
+    dispatcher: Agent;
+  };
+  return fetch(input, providerInit);
+}) as unknown as typeof fetch;
 
 export interface StrategyReply {
   /** 可照念的发言要点 — first-person, spoken-style zh. */
@@ -244,6 +273,51 @@ export interface AskSpec {
 }
 
 /**
+ * Concatenates `delta.content` fragments from an OpenAI-compatible SSE stream.
+ * Reasoning deltas (e.g. Qwen3 `reasoning_content`) are ignored — the strict
+ * JSON validation applies to the assembled answer text.
+ */
+async function textFromStreamingCompletion(response: Response): Promise<string | null> {
+  if (!response.body) return null;
+  let text = '';
+  let buffered = '';
+  const reader = response.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffered += Buffer.from(value).toString('utf8');
+      let nl: number;
+      while ((nl = buffered.indexOf('\n')) !== -1) {
+        const line = buffered.slice(0, nl).trim();
+        buffered = buffered.slice(nl + 1);
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') {
+          // The OpenAI-compat stream's terminal frame. The transport can keep
+          // the socket open (HTTP keep-alive), so end on the protocol marker
+          // instead of waiting for the body to close.
+          return text.length > 0 ? text : null;
+        }
+        try {
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+          };
+          text +=
+            parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content ?? '';
+        } catch {
+          // Malformed frame — skip it; strict-JSON validation runs on the
+          // assembled text regardless.
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return text.length > 0 ? text : null;
+}
+
+/**
  * One provider round trip. The OpenAI-compatible path tries guided decoding
  * first (structured outputs where the runtime supports it) and falls back to
  * a plain request when the endpoint rejects the field — belt and suspenders,
@@ -286,6 +360,12 @@ async function askProvider(
         model: provider.model,
         max_tokens: spec.maxTokens,
         messages,
+        // Streaming sidesteps response-header timeouts entirely: CPU-backed
+        // runtimes can spend tens of minutes before a non-streamed completion
+        // sends its first byte, but SSE headers arrive at once and tokens keep
+        // the connection warm (the dispatcher's body timeout applies between
+        // chunks, not to the whole generation).
+        stream: true,
         ...(guided
           ? {
               response_format: {
@@ -305,6 +385,10 @@ async function askProvider(
       // response_format — retry once without it before giving up.
       if (guided && response.status >= 400 && response.status < 500) continue;
       throw new AssistantProviderError(`HTTP ${response.status}`);
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('text/event-stream')) {
+      return textFromStreamingCompletion(response);
     }
     return textFromChatCompletion(await response.json());
   }
@@ -483,7 +567,7 @@ export function attachAssistant(
   opts: AssistantOptions = {},
 ): void {
   const provider = resolveAssistantProvider(opts);
-  const fetchImpl = opts.fetchImpl ?? fetch;
+  const fetchImpl = opts.fetchImpl ?? defaultProviderFetch;
   const maxRequests = opts.maxRequestsPerSlot ?? 3;
   const budgets = new Map<string, SlotBudget>();
 

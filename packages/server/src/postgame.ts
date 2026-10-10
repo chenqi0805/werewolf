@@ -4,6 +4,7 @@ import type { RoomRegistry } from './room';
 import {
   askStrictJson,
   CONTEXT_LABELS,
+  defaultProviderFetch,
   parseStrictJsonObject,
   resolveAssistantProvider,
   ROLE_LABELS,
@@ -359,7 +360,7 @@ export function attachPostgame(
   opts: PostgameOptions = {},
 ): void {
   const provider: AssistantProvider | null = resolveAssistantProvider(opts);
-  const fetchImpl = opts.fetchImpl ?? fetch;
+  const fetchImpl = opts.fetchImpl ?? defaultProviderFetch;
   /**
    * One entry per room, never evicted: rooms live for the process lifetime
    * and the room's 复盘 is attempted exactly once — a failed generation is

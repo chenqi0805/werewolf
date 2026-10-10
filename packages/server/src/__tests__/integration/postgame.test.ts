@@ -79,7 +79,10 @@ describe('postgame:analysis over real sockets', () => {
 
     const rig = await freshRig(scriptTimers(), { postgame: { anthropicApiKey: 'sk-cloud' } });
     await seatTwelve(rig);
-    await playScriptedGame(rig, 50_000);
+    // 90s: the scripted game blew its old 50s budget once on a starved CI
+    // runner (passed on rerun; 1.7s locally) — a deal running extra days at
+    // compact clocks can simply need more wall clock under contention.
+    await playScriptedGame(rig, 90_000);
     await waitFor(() => rig.recs.every((r) => r.latest?.phase === 'game-over'), 10_000);
 
     // Two viewers arm the generation at once — they must join one call.
@@ -100,7 +103,7 @@ describe('postgame:analysis over real sockets', () => {
     // ack carries nothing but the validated shape.
     for (const rec of rig.recs) rec.acks.push(REPLY);
     sweepAllPayloads(rig);
-  }, 70_000);
+  }, 120_000);
 
   it('acks NOT_GAME_OVER on a live room without calling the provider', async () => {
     const fetchMock = vi.fn(async () => anthropicFetch(JSON.stringify(REPLY)));
@@ -120,12 +123,12 @@ describe('postgame:analysis over real sockets', () => {
 
     const rig = await freshRig(scriptTimers(), {});
     await seatTwelve(rig);
-    await playScriptedGame(rig, 50_000);
+    await playScriptedGame(rig, 90_000);
     await waitFor(() => rig.recs.every((r) => r.latest?.phase === 'game-over'), 10_000);
     const ack = await askPostgame(rig.clients[0] as Client);
     expect(ack).toEqual({ error: 'ASSISTANT_UNAVAILABLE' });
     expect(fetchMock).not.toHaveBeenCalled();
-  }, 70_000);
+  }, 120_000);
 
   it('acks NOT_IN_ROOM for a socket that never joined', async () => {
     const fetchMock = vi.fn(async () => anthropicFetch(JSON.stringify(REPLY)));

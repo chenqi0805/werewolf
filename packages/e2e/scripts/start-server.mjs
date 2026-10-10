@@ -16,6 +16,13 @@ const child = spawn('npm', ['run', 'start', '-w', '@werewolf/server'], {
   env: {
     ...process.env,
     WEREWOLF_PORT: port,
+    // Compact clocks so a full 12-seat game plays out in minutes. `speech`
+    // gets the wider 3s slot: the composer auto-submits 1s before the slot
+    // deadline, so the capture window is clock − 1s, and the fake-media voice
+    // scenario needs room for real MediaRecorder frames (250ms cadence) to
+    // relay before the transcript lands. The driver-driven scenarios never
+    // feel the difference — their slots close early on the driver's SPEAK,
+    // not at expiry.
     WEREWOLF_TIMERS:
       process.env.WEREWOLF_E2E_TIMERS ??
       JSON.stringify({
@@ -27,7 +34,7 @@ const child = spawn('npm', ['run', 'start', '-w', '@werewolf/server'], {
         'sheriff-vote': 3000,
         'dawn-announce': 2000,
         'last-words': 2000,
-        speech: 1500,
+        speech: 3000,
         'exile-vote': 5000,
         'pk-speech': 2000,
         'pk-vote': 3000,

@@ -53,6 +53,11 @@ export const SELECTORS = {
   addBotButton: 'button:has-text("添加AI玩家")',
   boardOptionWolfKing: 'button.scr-board-option:has-text("白狼王局")',
   inviteGroup: '[aria-label="邮件邀请"]',
+  postgameSection: 'section[aria-label="本场复盘"]',
+  postgameGrid: '[aria-label="全场数据"]',
+  postgameAskButton: 'button:has-text("生成复盘")',
+  postgameReview: ':text("关键节点")',
+  postgameUnconfigured: ':text("本服未开启 AI 复盘")',
 } as const;
 
 /** Seat number carried in a chip's aria-label (`"3号 名字…"`). */
