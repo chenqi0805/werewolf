@@ -218,6 +218,13 @@ export function attachInvites(
         ack({ error: 'NOT_IN_ROOM' });
         return;
       }
+      // Invites are a lobby affordance: the engine rejects joins once the
+      // game is running, so a mid-game send would only burn budget on a
+      // dead link. Gate before any budget state is touched.
+      if (room.hasStarted()) {
+        ack({ error: 'GAME_RUNNING' });
+        return;
+      }
       // Address validation precedes budget and provider: a malformed input
       // is rejected even in degraded mode, before anything is spent.
       const address = typeof email === 'string' ? email.trim() : '';

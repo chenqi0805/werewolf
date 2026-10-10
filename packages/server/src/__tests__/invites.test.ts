@@ -360,3 +360,22 @@ describe('attachInvites', () => {
     ); // base URL alone is not a sender
   });
 });
+
+describe('room:invite phase gate and seat budgets', () => {
+  it('acks GAME_RUNNING for a mid-game invite before any budget state is touched', async () => {
+    const room = fixedRoom();
+    for (let i = 0; i < 12; i++) room.join();
+    const sendImpl = vi.fn(async () => {});
+    const server = new FakeInviteServer();
+    attachInvites(server, registryOf(room), inviteOpts(sendImpl, { maxInvitesPerLobby: 1 }));
+    const socket = new FakeInviteSocket();
+    bind(socket, room.code, 1);
+    server.connect(socket);
+    expect(await socket.invite('friend@example.com')).toEqual({ ok: true }); // budget 1/1
+    room.start();
+    // The phase gate precedes the budget check: a maxed budget would ack
+    // INVITE_RATE_LIMITED if the budget were consulted first.
+    expect(await socket.invite('other@example.com')).toEqual({ error: 'GAME_RUNNING' });
+    expect(sendImpl).toHaveBeenCalledTimes(1); // no send left the lobby
+  });
+});

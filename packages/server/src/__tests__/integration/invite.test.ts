@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MailSender } from '../../invites';
 import {
   connect,
+  connectAll,
   createRoom,
   joinRoom,
+  startRoom,
   startServer,
   stopServer,
   waitFor,
@@ -118,6 +120,37 @@ describe('room:invite over real sockets', () => {
     if (!creator) throw new Error('no creator client');
     expect(await invite(creator, 'a@example.com')).toEqual({ ok: true });
     expect(await invite(creator, 'b@example.com')).toEqual({ error: 'INVITE_RATE_LIMITED' });
+    expect(sendImpl).toHaveBeenCalledTimes(1);
+  }, 15000);
+
+  it('acks GAME_RUNNING for a mid-game invite and leaves the budget untouched', async () => {
+    const sendImpl = vi.fn(async () => {});
+    const rig = await freshRig(undefined, {
+      invites: {
+        baseUrl: 'https://werewolf.example',
+        from: 'a@b.c',
+        sendImpl,
+        maxInvitesPerLobby: 1,
+      },
+    });
+    const creator = await connect(rig);
+    const { roomCode } = await createRoom(creator.client);
+    const joiners = await connectAll(rig, 11);
+    for (const j of joiners) await joinRoom(j.client, roomCode);
+    await waitFor(() => rig.recs.every((r) => r.latest !== null));
+
+    // The lobby send maxes seat 1's budget (1/1) while the room is joinable.
+    const creatorClient = rig.clients[0];
+    if (!creatorClient) throw new Error('no creator client');
+    expect(await invite(creatorClient, 'lobby@example.com')).toEqual({ ok: true });
+    await startRoom(creator.client);
+
+    // The mid-game ask is rejected by the phase gate — GAME_RUNNING, not
+    // INVITE_RATE_LIMITED, proving the gate runs before any budget
+    // consultation on a maxed budget.
+    expect(await invite(creatorClient, 'midgame@example.com')).toEqual({
+      error: 'GAME_RUNNING',
+    });
     expect(sendImpl).toHaveBeenCalledTimes(1);
   }, 15000);
 });
